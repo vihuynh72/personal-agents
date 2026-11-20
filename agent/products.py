@@ -172,7 +172,9 @@ class BrightDataTools(StripeTools):
             items = [{"sku": i.product.id, "name": i.product.name, "price": i.product.price, "quantity": i.quantity}
                      for i in cart.items if i.product.source == source]
             card = demo_card(cart.gathering_id, quote(cart)["total"])
-            base = os.environ.get("PUBLIC_URL", "https://personal-agents-production-81468651.up.railway.app")
+            # The store the ordering agent checks out on is configuration; it defaults to our own demo store.
+            base = os.environ.get("STORE_BASE_URL") or os.environ.get(
+                "PUBLIC_URL", "https://personal-agents-production-81468651.up.railway.app")
             res = place_order_in_cloud(base, items, "Shopper", cart.ship_to, card["number"], card["exp"], card["cvc"])
             if res.get("ok"):
                 return f"{res['order_id']} (demo store, placed by cloud {res.get('path')})"
