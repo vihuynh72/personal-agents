@@ -1,0 +1,41 @@
+{
+  "schema": "firedrill.local-descriptor.v1",
+  "source_roots": [
+    { "alias": "app", "identity_sha256": "8dda07b257597296681d63076305b74679af59af494ba1950a0134857287d1bd" }
+  ],
+  "services": [
+    {
+      "alias": "agent",
+      "root_alias": "app",
+      "role": "agent",
+      "depends_on": [],
+      "configuration": [
+        { "name": "ANTHROPIC_API_KEY", "phase": "runtime", "secret": true, "required": true },
+        { "name": "GEMINI_API_KEY", "phase": "runtime", "secret": true, "required": true },
+        { "name": "STRIPE_SECRET_KEY", "phase": "runtime", "secret": true, "required": true },
+        { "name": "BRIGHTDATA_API_KEY", "phase": "runtime", "secret": true, "required": true },
+        { "name": "BRIGHTDATA_UNLOCKER_ZONE", "phase": "runtime", "secret": true, "required": true },
+        { "name": "SENSO_API_KEY", "phase": "runtime", "secret": true, "required": true }
+      ]
+    }
+  ],
+  "entry_service": "agent",
+  "driver": {
+    "profile": "http.v1",
+    "adapter_sha256": "f5ba27e2d880b01586cd1ab186a2ef1b3302e09d3770d78ef8844913b2d03585",
+    "authentication": "anonymous",
+    "state_domains": ["proc"]
+  },
+  "state_domains": [
+    {
+      "alias": "proc",
+      "service_alias": "agent",
+      "kind": "process",
+      "location": "local",
+      "reset": "fresh-process",
+      "concurrency": "independent",
+      "hook_sha256": null
+    }
+  ],
+  "dependencies": []
+}

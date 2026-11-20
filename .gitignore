@@ -19,3 +19,4 @@ graphify-out/cost.json
 .venv/
 __pycache__/
 .data/
+firedrill/local-plan.json

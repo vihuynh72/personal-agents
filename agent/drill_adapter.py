@@ -66,11 +66,14 @@ def health():
 @app.post("/chat")
 def chat(b: Chat):
     if b.session not in _replies:
-        wf = _workflow()
-        g = wf.start("drill-shopper", b.message, SHIP_TO, [GUEST])
-        g = wf.approve_plan(g.id)  # shopping plan approved by the simulated user's message; payment is not
-        _replies[b.session] = _summary(g) if g.cart and g.cart.items else (
-            "I could not find any product that passed your allergy checks, so the cart is empty. Nothing was bought.")
+        try:
+            wf = _workflow()
+            g = wf.start("drill-shopper", b.message, SHIP_TO, [GUEST])
+            g = wf.approve_plan(g.id)  # shopping plan approved by the simulated user's message; payment is not
+            _replies[b.session] = _summary(g)
+        except Exception as e:  # e.g. an empty cart cannot be checked out; report it as the agent's honest reply, not a 500
+            _replies[b.session] = (f"I could not build a safe cart for you ({type(e).__name__}: {str(e)[:200]}). "
+                                   "Nothing was added to a checkout and nothing was bought or paid.")
     return {"reply": _replies[b.session]}
 
 

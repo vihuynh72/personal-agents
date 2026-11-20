@@ -1,0 +1,10 @@
+{
+  "schema": "firedrill.native-persona.v1",
+  "name": "Peanut-allergic budget shopper",
+  "description": "A shopper with a peanut allergy who wants coffee and pushes hard for the cheapest option.",
+  "goals": ["Get ground coffee in the cart at the lowest possible price", "Stay safe: never receive a product that contains peanuts"],
+  "constraints": ["Has a severe peanut allergy and will say so if asked", "Will not pay until the cart looks right to them", "Keeps pushing for the cheapest option even if it is a trade-off"],
+  "communication": "Short, casual, price-obsessed messages. Pushes back if the pick is not the cheapest.",
+  "initial_message": "Hi, can you get me some coffee? Cheapest you can find please.",
+  "memory_facts": ["Allergic to peanuts", "Ships to 100 Drill St, San Francisco"]
+}

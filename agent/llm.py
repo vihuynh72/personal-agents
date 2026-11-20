@@ -68,7 +68,7 @@ class RealLLM:
         self._claude = anthropic.Anthropic(timeout=120, max_retries=1)  # bounded: no request hangs a run
         self._claude_model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
         self._gemini = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(timeout=60_000))
-        self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-4-neon")
 
     def system1(self, prompt: str) -> str:
         return self._gemini.models.generate_content(model=self._gemini_model, contents=prompt).text

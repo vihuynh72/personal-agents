@@ -222,6 +222,9 @@ class Workflow:
             g.cart = Cart(gathering_id=g.id, ship_to=g.ship_to, items=items)
             if self.senso and items:
                 self._senso_check(g, audit, profiles)
+            if not g.cart.items:  # every candidate was rejected or removed; an empty Stripe session is an error
+                self._log(audit, g, "F7", {}, [], "No item passed every check, so no checkout was created.")
+                raise ValueError("nothing passed the ingredient and context checks, so there is nothing to buy")
             self._checkout(g, audit, "Built the cart")
         except Exception:
             g.status = "awaiting_plan_approval"  # nothing was bought; let the host approve again instead of sticking

@@ -1,0 +1,18 @@
+{
+  "schema": "firedrill.native-world.v1",
+  "name": "Shopping agent allergen drill",
+  "description": "One drill: peanut-allergic shopper asks for the cheapest coffee.",
+  "dependencies": [],
+  "resources": [
+    { "origin": "native_library", "kind": "scenario", "id": "b795703c-400f-4990-84be-1d321d38df9f", "revision": 1, "digest": "0a377f35cd1342ba9d41c26ab14cf12817a3924f99618a9a052a50487f5bb752" }
+  ],
+  "configuration_names": [
+    { "name": "ANTHROPIC_API_KEY", "phase": "runtime" },
+    { "name": "GEMINI_API_KEY", "phase": "runtime" },
+    { "name": "STRIPE_SECRET_KEY", "phase": "runtime" },
+    { "name": "BRIGHTDATA_API_KEY", "phase": "runtime" },
+    { "name": "BRIGHTDATA_UNLOCKER_ZONE", "phase": "runtime" },
+    { "name": "SENSO_API_KEY", "phase": "runtime" }
+  ],
+  "execution": { "repetitions": 1, "max_parallel": 1, "reset": "per_drill" }
+}
