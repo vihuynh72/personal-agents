@@ -149,6 +149,12 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
         @app.get("/", include_in_schema=False)
         def _home():
             return _Redirect("/app/")
+    @app.get("/try", include_in_schema=False)
+    def _try():  # phone number in, then the real agent over POST /messages
+        from fastapi.responses import HTMLResponse
+        from agent.try_page import PAGE
+        return HTMLResponse(PAGE)
+
     from agent import mockstore  # our own demo retailer, for the cloud ordering step
     app.include_router(mockstore.make_router(str(profiles.dir.parent)))
 
