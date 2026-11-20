@@ -67,7 +67,7 @@ One teammate argued against shopping entirely: buying is too personal and trends
 ## Team and stack
 
 - Four people. Vi owns the AI brain: memory, knowledge graph, inference, connecting agents.
-- Other roles are unassigned.
+- A second teammate owns the front end. Sponsor integrations and the demo video are unassigned. See the owners table in `docs/agent-graph.md`.
 - Shared memory: Graphify knowledge graph in this repo, so nobody's agent re-reads raw context.
 - Deployment: Railway for backend and long-running agents (a teammate has a paid plan). Vercel is front end only.
 - Models and tools mentioned: Claude, Gemini, Deepgram, Stripe, Google Calendar (preferred over Apple Calendar because it has an MCP server).

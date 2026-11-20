@@ -84,14 +84,27 @@ Edges that matter:
 
 Team position after the follow-up: Airbyte and Guild AI for sure. Senso, Persona, SingleStore, Cognee and Amplitude were all named as wanted. The team believes three sponsor tools is the minimum; the hackathon page does not state this.
 
-Recommendation: four sponsors, in priority order.
+Decided by the team: six sponsors. Build them in this order, so the demo still works if the later ones do not land.
 
 1. Senso.ai: trusted product and ingredient context for F6, and the decision trail for F10. This is the challenge's own sponsor.
-2. Airbyte: pulls product data from the two web sources into one place. It fits the "at least two sources" decision.
-3. Guild AI: runs the master agent and sub-agents.
-4. Cognee: profile memory for F2 and F11.
+2. Guild AI: runs the master agent and sub-agents.
+3. Cognee: holds the memory, the per-person profiles for F2 and F11.
+4. Airbyte: pulls product data from the two web sources into one place.
+5. Firedrill: tests the agents, by simulating guests with conflicting restrictions and checking the cart still passes.
+6. Persona: verifies the host is a real person at the checkout gate (F8), before agents spend on their behalf.
 
-Left out unless time remains: Persona (nothing in a grocery dinner needs identity or age checks unless alcohol is in the cart), SingleStore (no real-time data need yet), Amplitude (analytics does not appear in the demo).
+An earlier recommendation was four sponsors, leaving out Persona. The team chose six.
+
+Left out: SingleStore (no real-time data need yet), Amplitude (analytics does not appear in the demo).
+
+## Owners
+
+| Piece | Owner |
+|-------|-------|
+| Agent structure, backend, agentic workflow, initiating the sub-agents | Vi |
+| Front end: app design and pages | The teammate who is strongest at user interface |
+| Sponsor integrations (Senso, Airbyte, Firedrill, Persona) | Unassigned |
+| Demo video and submission | Unassigned |
 
 ## Risks seen during the session
 
