@@ -43,6 +43,8 @@ _INTENT = ("TASK: intent. Classify this text to a shopping agent. Reply with JSO
 _ANSWER = ("TASK: answer. Rephrase these facts as a reply to the shopper's question in 1 to 3 short sentences. "
            "Use only these facts and nothing else. Never say or imply the product is safe.\n")
 
+_AUTOPAY = re.compile(r"\s*(?:(stop) autopay|autopay(?: (on|off)| limit \$?(\d+(?:\.\d+)?))?)[.!\s]*", re.I)
+
 _NONE = re.compile(r"(none|no|nope|nothing|n/?a|no thanks)[.! ]*", re.I)
 
 
@@ -137,6 +139,8 @@ class Chat:
     def handle(self, sender: str, text: str) -> str:
         if (reply := self._confirm(sender, text)) is not None:
             return reply
+        if m := _AUTOPAY.fullmatch(text):
+            return self._autopay(sender, m)
         reply = self._handle(sender, text)
         if (m := re.search(r"are you still avoiding (.+?)\? \(yes/no\)", reply)):
             self._asked[sender] = m.group(1)
@@ -200,7 +204,26 @@ class Chat:
                           guest_ids=[sender], mode="self")
         self.wf.set_sender(g.id, sender)
         g = self.wf.approve_plan(g.id)  # buy-for-myself: the plan gate is skipped by design; payment is the gate
-        return self._cart(g)
+        # autopay: the shopper opted in once, so a saved-card charge under their limit replaces the pay link
+        if (a := self.wf.autopay(g.id, sender)) and a["charged"]:
+            return f"Charged ${quote(g.cart)['total']:.2f} to your card ending {a['card']['last4']}.\n" + self.wf.receipt(g.id)
+        return self._cart(g) + (f"\nNot charged automatically: {a['reason']}" if a else "")
+
+    def _autopay(self, sender: str, m) -> str:
+        """AUTOPAY / AUTOPAY OFF / STOP AUTOPAY / AUTOPAY LIMIT 80. Explicit opt-in only; off applies to the next order."""
+        c = self.wf.card(sender)
+        if not c:
+            return "Autopay needs a saved card. Pay once through the order link first, then reply AUTOPAY."
+        if m.group(1) or (m.group(2) or "").lower() == "off":
+            self.wf.set_card(sender, autopay=False)
+            return "Autopay is off. I'll send you the order link to pay each time."
+        if m.group(3):
+            limit = min(float(m.group(3)), 200.0)  # hard cap on what autopay may charge without a click
+            self.wf.set_card(sender, limit=limit)
+            return f"Autopay limit is now ${limit:g}." + ("" if c.get("autopay") else " Reply AUTOPAY to turn it on.")
+        self.wf.set_card(sender, autopay=True)
+        return (f"Autopay is on for orders under ${c['limit']:g}, card ending {c['last4']}. "
+                "Reply AUTOPAY OFF any time.")
 
     def _current(self, sender: str):
         waiting = [i for i in self.wf.gatherings_of(sender) if self.wf.get(i).status == "awaiting_payment"]

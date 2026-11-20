@@ -1,0 +1,96 @@
+[
+ {
+  "id": "samplemenu-733bd2a662",
+  "name": "Carnitas Tacos (3) (Sample Taqueria) (sample menu)",
+  "source": "Sample Menu",
+  "url": "https://example.com/sample-taqueria",
+  "price": 13.5,
+  "pack_size": "1 order",
+  "ingredients": [
+   "pork",
+   "onion",
+   "cilantro",
+   "fresh salsa"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "samplemenu-3d85f46008",
+  "name": "Al Pastor Tacos (3) (Sample Taqueria) (sample menu)",
+  "source": "Sample Menu",
+  "url": "https://example.com/sample-taqueria",
+  "price": 13.5,
+  "pack_size": "1 order",
+  "ingredients": [
+   "marinated pork",
+   "pineapple",
+   "onion",
+   "cilantro"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "samplemenu-9f073c6588",
+  "name": "Veggie Tacos (3) (Sample Taqueria) (sample menu)",
+  "source": "Sample Menu",
+  "url": "https://example.com/sample-taqueria",
+  "price": 12.0,
+  "pack_size": "1 order",
+  "ingredients": [
+   "grilled peppers",
+   "black beans",
+   "avocado",
+   "salsa"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "samplemenu-eb76942b6c",
+  "name": "Chicken Tinga Tacos (3) (Sample Taqueria) (sample menu)",
+  "source": "Sample Menu",
+  "url": "https://example.com/sample-taqueria",
+  "price": 13.0,
+  "pack_size": "1 order",
+  "ingredients": [],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "samplemenu-e9306ae527",
+  "name": "Rice and Beans (Sample Taqueria) (sample menu)",
+  "source": "Sample Menu",
+  "url": "https://example.com/sample-taqueria",
+  "price": 5.5,
+  "pack_size": "1 order",
+  "ingredients": [
+   "rice",
+   "black beans",
+   "lime"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "samplemenu-b3fb9fc191",
+  "name": "Chips and Guacamole (Sample Taqueria) (sample menu)",
+  "source": "Sample Menu",
+  "url": "https://example.com/sample-taqueria",
+  "price": 8.0,
+  "pack_size": "1 order",
+  "ingredients": [
+   "corn chips",
+   "avocado",
+   "lime",
+   "salt"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "samplemenu-2a1338484f",
+  "name": "Taco Party Platter (Sample Taqueria) (sample menu)",
+  "source": "Sample Menu",
+  "url": "https://example.com/sample-taqueria",
+  "price": 72.0,
+  "pack_size": "Serves 6-8",
+  "ingredients": [],
+  "arrive_by": "2026-11-23"
+ }
+]

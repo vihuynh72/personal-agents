@@ -216,7 +216,54 @@ class Workflow:
         if len(text) > 900:  # keep the totals and the closing line; trim items
             t = "\n".join(tail)
             text = "\n".join(items)[:896 - len(t)] + "...\n" + t
+        who = self.sender(gathering_id)
+        if who and (c := self.card(who)) and not c.get("offered") and not c["autopay"]:  # the one-time opt-in offer
+            self.set_card(who, offered=True)
+            text += (f"\nReply AUTOPAY and I'll charge this card automatically for orders under ${c['limit']:g} "
+                     "from now on.")
         return text
+
+    # ---- autopay: per sender, only Stripe ids, brand and last four; never a card number ----
+
+    def card(self, sender: str) -> dict | None:
+        p = self.dir / "notify" / "cards.json"  # read only: an unknown sender must not create files
+        with self._lock:
+            return json.loads(p.read_text()).get(sender) if p.exists() else None
+
+    def set_card(self, sender: str, **fields) -> None:
+        self._update("cards.json", {}, lambda d: d.__setitem__(sender, {**d.get(sender, {}), **fields}))
+
+    def autopay(self, gathering_id: str, sender: str) -> dict | None:
+        """Charge the sender's saved card for a chat cart if autopay allows. None when autopay is off;
+        else {"charged": bool, "reason": str | None, "card": dict}. The lock and the charge record mean one
+        gathering is never charged twice."""
+        c = self.card(sender)
+        if not c or not c.get("autopay"):
+            return None
+        with self._lock:
+            g = self.get(gathering_id)
+            total = quote(g.cart)["total"] if g.cart else 0
+            done = self._update("autopay_charges.json", {}, lambda d: d.get(gathering_id))
+            reason = ("Already charged." if done or g.status != "awaiting_payment" else
+                      "This order is not yours to autopay." if g.mode != "self" or self.sender(gathering_id) != sender else
+                      "One item needs your confirmation." if any(i.status != "pass" for i in g.cart.items) else
+                      f"Over your ${c['limit']:g} autopay limit." if total > c["limit"] else None)
+            res = None
+            if reason is None:
+                res = self.tools.charge_saved(c["customer"], c["payment_method"], g.cart)
+                if res.get("ok"):
+                    self._update("autopay_charges.json", {}, lambda d: d.__setitem__(gathering_id, res["id"]))
+                else:
+                    reason = "Your card needs you to approve this one."
+        card = f"{c['brand']} ending {c['last4']}"
+        self.log_event(gathering_id, "F7", {"autopay": True, "amount": total, "limit": c["limit"], "card": card,
+                                            "payment_intent": res and res.get("id"), "error": res and res.get("error")},
+                       [f"card:{c['customer']}", f"cart_total:{total}"],
+                       f"Charged ${total:.2f} automatically to the saved {card}, PaymentIntent {res['id']}."
+                       if reason is None else f"Autopay skipped: {reason} {(res or {}).get('error') or ''}".strip())
+        if reason is None:
+            self.mark_paid(gathering_id, notify=False, intent={"id": res["id"], "amount": round(total * 100)})
+        return {"charged": reason is None, "reason": reason, "card": c}
 
     def get(self, gathering_id: str) -> Gathering:
         return self._load(gathering_id)[0]
@@ -519,7 +566,8 @@ class Workflow:
         self._save(g, audit)
         return g
 
-    def mark_paid(self, gathering_id: str, notify: bool = True) -> Gathering:
+    def mark_paid(self, gathering_id: str, notify: bool = True, intent: dict | None = None) -> Gathering:
+        """intent {"id", "amount"}: paid by the saved card (autopay), not by the Checkout Session."""
         with self._lock:  # the watcher and a "paid" text can race; only one gets past the status check
             g, audit = self._open(gathering_id, "awaiting_payment")
             g.status = "fulfilling"
@@ -545,9 +593,19 @@ class Workflow:
                       f"Placed order {oid} with {s}, paid with virtual card ending {last4}, "
                       f"shipping to {g.ship_to} (simulated).", simulated=True)
 
-        ok = self.tools.verify_checkout(g.cart)  # F9
-        self._log(audit, g, "F9", {"checkout_url": g.checkout_url}, [f"cart_total:{g.cart.total}"],
-                  "Checkout session matches the cart." if ok else "Checkout session does NOT match the cart.")
+        if intent:  # F9: charge_saved charged exactly the quoted total
+            ok = intent["amount"] == round(total * 100)
+            self._log(audit, g, "F9", {"payment_intent": intent["id"], "amount_cents": intent["amount"]},
+                      [f"cart_total:{total}"], "Saved-card charge matches the cart." if ok
+                      else "Saved-card charge does NOT match the cart.")
+        else:
+            ok = self.tools.verify_checkout(g.cart)  # F9
+            self._log(audit, g, "F9", {"checkout_url": g.checkout_url}, [f"cart_total:{g.cart.total}"],
+                      "Checkout session matches the cart." if ok else "Checkout session does NOT match the cart.")
+            who = self.sender(g.id)
+            if who and not self.card(who) and (c := self.tools.saved_card(g.cart)):  # first chat payment saves it
+                self.set_card(who, **{k: c[k] for k in ("customer", "payment_method", "last4", "brand")},
+                              autopay=False, limit=float(os.environ.get("AUTOPAY_LIMIT", "50")))
         self._log(audit, g, "F11", {}, [f"profile:{i}" for i in g.guest_ids],
                   "Feedback will be recorded into each profile after the dinner.")
         g.status = "done"

@@ -24,6 +24,8 @@ CAP = 60  # seconds for a whole fan-out, so one slow page cannot hang the search
 # Target's public web key, the same one target.com sends from the browser.
 TARGET = "https://redsky.target.com/redsky_aggregations/v1/web/"
 TARGET_KEY = "key=9f36aeafbe60771e321a7cc95a78140772ab3e96&channel=WEB&pricing_store_id=3991&visitor_id=0123456789ABCDEF0123456789ABCDEF"
+# a request with one of these also gets restaurant dishes (agent/restaurants.py)
+FOOD = re.compile(r"\b(dinner|lunch|catering|takeout|delivery|restaurant|pizza|tacos?|burritos?|sushi|pho|noodles?|burgers?|sandwich(?:es)?|platters?)\b", re.I)
 PACK = re.compile(r"\d+(?:\.\d+)?[\s-]*(?:fl\.?\s*oz|fluid\s+ounces?|oz|ounces?|lbs?|count|ct|pack|pk|gal|qt|pt|ml|kg|g|l)\b\.?", re.I)
 
 
@@ -161,6 +163,16 @@ def _load(path: Path) -> list[Product] | None:
 
 class BrightDataTools(StripeTools):
     def search_products(self, query: str, ship_to: str) -> list[Product]:
+        found = self._search_stores(query, ship_to)
+        if FOOD.search(query):
+            try:
+                from agent.restaurants import search_dishes  # lazy: restaurants imports this module
+                found = found + search_dishes(query, ship_to)
+            except Exception as e:  # dishes are a bonus, the store results stand
+                log.warning("dish search failed: %r", e)
+        return found
+
+    def _search_stores(self, query: str, ship_to: str) -> list[Product]:
         # shortcut: prices come from a default store (Target store 3991, Walmart's default), not ship_to;
         # pass ship_to's zip to both stores when per-address pricing matters.
         name = _slug(query) + ".json"

@@ -67,6 +67,8 @@ class StripeTools(FakeTools):
             line_items=line_items(cart),
             shipping_address_collection={"allowed_countries": ["US"]},
             metadata={"gathering_id": cart.gathering_id},
+            customer_creation="always",  # saves the card to a Customer for autopay
+            payment_intent_data={"setup_future_usage": "off_session"},
             success_url=url + "?paid=1",
             cancel_url=url,
         )
@@ -91,6 +93,35 @@ class StripeTools(FakeTools):
             return ", ".join(p for p in parts if p) or None
         except Exception:
             return None
+
+    def saved_card(self, cart_or_gathering_id) -> dict | None:
+        """The card a paid Checkout Session saved: Stripe ids, brand and last four only; None on any error."""
+        try:
+            gid = getattr(cart_or_gathering_id, "gathering_id", cart_or_gathering_id)
+            s = stripe.checkout.Session.retrieve(self._sessions.get(gid), expand=["payment_intent.payment_method"])
+            pm = s.payment_intent.payment_method
+            return {"customer": s.customer, "payment_method": pm.id, "last4": pm.card.last4, "brand": pm.card.brand}
+        except Exception:
+            return None
+
+    def charge_saved(self, customer: str, payment_method: str, cart: Cart) -> dict:
+        """Off-session charge of the quoted total to the saved card; a decline or 3DS request is ok False."""
+        try:
+            pi = stripe.PaymentIntent.create(
+                amount=round(quote(cart)["total"] * 100), currency="usd", customer=customer,
+                payment_method=payment_method, off_session=True, confirm=True,
+                metadata={"gathering_id": cart.gathering_id},
+                description="; ".join(f"{i.product.name} x{i.quantity}" for i in cart.items)[:1000])
+            ok = pi.status == "succeeded"
+            if ok:  # the order's checkout link must stop working, or the shopper could pay a second time
+                try:
+                    if (sid := self._sessions.get(cart.gathering_id)):
+                        stripe.checkout.Session.expire(sid)
+                except Exception:
+                    pass
+            return {"ok": ok, "id": pi.id, "error": None if ok else f"payment {pi.status}"}
+        except Exception as e:  # CardError covers both declines and authentication_required
+            return {"ok": False, "id": "", "error": str(getattr(e, "user_message", None) or e)}
 
     def verify_checkout(self, cart: Cart) -> bool:
         s = self._session(cart)

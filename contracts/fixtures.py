@@ -68,3 +68,17 @@ class FakeTools:
 
     def place_order(self, cart: Cart, source: str) -> str:
         return f"sim-{source}-{cart.gathering_id}"
+
+    card = None  # tests set {"customer", "payment_method", "last4", "brand"} to simulate a card Stripe saved
+    charge_error = None  # tests set a reason to simulate a declined or authentication-required charge
+
+    def saved_card(self, cart_or_gathering_id) -> dict | None:
+        return self.card
+
+    def charge_saved(self, customer: str, payment_method: str, cart: Cart) -> dict:
+        if self.charge_error:
+            return {"ok": False, "id": "", "error": self.charge_error}
+        from agent.pricing import quote
+        self.charges = [*getattr(self, "charges", []), {"customer": customer, "payment_method": payment_method,
+                                                        "amount": round(quote(cart)["total"] * 100)}]
+        return {"ok": True, "id": f"pi_fake_{cart.gathering_id}_{len(self.charges)}", "error": None}

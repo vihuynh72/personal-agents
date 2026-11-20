@@ -27,3 +27,11 @@ class Tools(Protocol):
     def place_order(self, cart: Cart, source: str) -> str:  # F13
         """Place the order with one retailer; return an order id."""
         ...
+
+    def saved_card(self, cart_or_gathering_id) -> dict | None:  # autopay
+        """After a paid checkout: {customer, payment_method, last4, brand}; None on any error."""
+        ...
+
+    def charge_saved(self, customer: str, payment_method: str, cart: Cart) -> dict:  # autopay F7
+        """Off-session charge of the quoted total: {ok, id, error}. Never raises."""
+        ...
