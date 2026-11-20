@@ -19,6 +19,10 @@ class MessageBody(BaseModel):
     text: str
 
 
+class ImportBody(BaseModel):
+    items: list[dict]  # {"text", "source", "when"?}
+
+
 class CartBody(BaseModel):
     changes: list[dict]  # {"product_id", "quantity"} or {"product_id", "swap_to"}
 
@@ -30,11 +34,19 @@ def _out(g) -> dict:
     return d
 
 
-def create_app(workflow, chat=None, profiles=None) -> FastAPI:
+def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
     from agent.profiles import ProfileStore
 
     profiles = profiles or getattr(workflow, "profiles", None) or ProfileStore()
     app = FastAPI(title="Gathering agent")
+    app.state.memory = memory  # Chat can be handed this; built on first use when not given
+
+    def _memory():
+        if app.state.memory is None:
+            from agent.llm import get_llm
+            from agent.memory import Memory
+            app.state.memory = Memory(profiles, get_llm(), str(profiles.dir.parent))
+        return app.state.memory
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
     @app.exception_handler(KeyError)
@@ -100,6 +112,15 @@ def create_app(workflow, chat=None, profiles=None) -> FastAPI:
     def put_profile(pid: str, b: GuestProfile):
         return profiles.save(b.model_copy(update={"id": pid})).model_dump(mode="json")
 
+    @app.post("/profiles/{pid}/import")  # Day 0: past messages, receipts, calendar entries
+    def import_history(pid: str, b: ImportBody):
+        r = _memory().add_many(pid, b.items)
+        return {"profile": r["profile"].model_dump(mode="json"), "added": len(r["added"]), "conflicts": r["conflicts"]}
+
+    @app.get("/profiles/{pid}/memory")
+    def memory_history(pid: str):
+        return _memory().history(pid)
+
     return app
 
 
@@ -131,7 +152,9 @@ def __getattr__(name):  # lazy `app` so importing this module (tests) needs neit
             from agent.profiles import ProfileStore
             llm, store = get_llm(), ProfileStore()
             wf = Workflow(tools, llm, senso=senso, profiles=store)
-            _app = create_app(wf, Chat(wf, store, llm), store)
+            from agent.memory import Memory
+            memory = Memory(store, llm)
+            _app = create_app(wf, Chat(wf, store, llm, memory=memory), store, memory)
             from agent.watcher import start
             start(wf)  # notices Stripe payments by polling; no webhook
         return _app

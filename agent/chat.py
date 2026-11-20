@@ -53,9 +53,60 @@ def _merge(a: list[str], b: list[str]) -> list[str]:
     return a + [x for x in b if x.lower() not in seen]
 
 
+# a reply to the follow-up that says nothing worth remembering
+_CHEAP = re.compile(r"[\W_]*((fine|good|great|ok|okay|no|nope|nothing|none|all|it|was|all good|thanks|thank you|thx|"
+                    r"ty|yes|yep|perfect|loved it|nah)[\W_]*)*", re.I)
+
+
+def _learned(res: dict) -> str:
+    """One line from memory.add's result; at most one yes/no question, only for a conflict that needs it."""
+    said = []
+    for f in res.get("added") or []:
+        kind, plus, v = f.get("kind"), str(f.get("polarity", "+")).startswith("+"), f.get("value")
+        if kind == "name":
+            continue
+        liked = plus if kind == "preference" else (not plus if kind == "dislike" else None)
+        said.append(f"you liked {v}" if liked is True else f"you didn't like {v}" if liked is False else
+                    f"you avoid {v}" if plus else f"you no longer avoid {v}")
+    out = f"Thanks. Noted: {'; '.join(said)}." if said else "Thanks, noted."
+    ask = next((c for c in res.get("conflicts") or [] if c.get("needs_confirmation")), None)
+    return out + (f" One check: are you still avoiding {ask.get('value')}? (yes/no)" if ask else "")
+
+
 class Chat:
-    def __init__(self, workflow: Workflow, profiles: ProfileStore, llm):
-        self.wf, self.store, self.llm = workflow, profiles, llm
+    def __init__(self, workflow: Workflow, profiles: ProfileStore, llm, memory=None):
+        self.wf, self.store, self.llm, self.memory = workflow, profiles, llm, memory  # memory: agent.memory.Memory or None
+        self._asked: dict[str, str] = {}  # sender -> value awaiting a yes/no
+
+    def _feedback(self, sender: str, fb: dict, text: str) -> str:
+        """The reply to a post-order follow-up: into memory (or the audit trail), then the mark is cleared."""
+        gid, person = fb["gathering_id"], fb["person"]
+        self.wf.clear_awaiting(sender)
+        if _CHEAP.fullmatch(text.strip()):
+            self.wf.log_event(gid, "F11", {"from": person, "feedback": text}, [f"profile:{person}"],
+                              "Feedback had nothing to change; recorded nothing.")
+            return "Thanks!"
+        reply, changed = "Thanks, noted.", "Stored the raw feedback (no memory attached)."
+        if self.memory:
+            res = self.memory.add(person, text, "feedback")
+            reply = _learned(res)
+            changed = f"Memory added {res.get('added') or []}; conflicts {res.get('conflicts') or []}."
+        g, host = self.wf.get(gid), fb.get("host")
+        item = next((m for m in g.menu if any(re.search(rf"\b{re.escape(w)}\b", text, re.I)
+                                             for w in m.split() if len(w) > 3)), None)
+        if fb.get("role") == "guest" and host and item:
+            note = f"Guest {fb.get('name') or person} said about {item}: {text}"
+            if self.memory:
+                before = self.store.get(host)
+                self.memory.add(host, note, "guest")
+                after = self.store.get(host)
+                if before and after and (after.allergens, after.restrictions) != (before.allergens, before.restrictions):
+                    # a guest's safety facts are never the host's
+                    self.store.save(after.model_copy(update={"allergens": before.allergens,
+                                                             "restrictions": before.restrictions}))
+            changed += f" Recorded for host {host}: {note}"
+        self.wf.log_event(gid, "F11", {"from": person, "feedback": text}, [f"profile:{person}"], changed)
+        return reply
 
     def _intent(self, text: str) -> str | None:
         # Classification must never be the reason a shopper gets an apology: on any model failure or an
@@ -69,9 +120,35 @@ class Chat:
             intent = json.loads(FakeLLM().system1(_INTENT + text)).get("intent")
         return intent
 
+    def _confirm(self, sender: str, text: str) -> str | None:
+        """Answer to the single safety question. Only the person's own 'no' removes a restriction."""
+        value = self._asked.pop(sender, None)
+        word = re.sub(r"[^a-z]", "", text.lower())[:4]
+        if value is None or not self.memory or not word.startswith(("yes", "yep", "yeah", "no", "nope", "nah")):
+            return None
+        if word.startswith("y"):
+            return f"Got it. Still avoiding {value}."
+        self.memory.add(sender, f"I can eat {value} now. I am no longer allergic to {value}.", "chat")
+        return f"Updated. I'll stop avoiding {value} for you."
+
     def handle(self, sender: str, text: str) -> str:
+        if (reply := self._confirm(sender, text)) is not None:
+            return reply
+        reply = self._handle(sender, text)
+        if (m := re.search(r"are you still avoiding (.+?)\? \(yes/no\)", reply)):
+            self._asked[sender] = m.group(1)
+        return reply
+
+    def _handle(self, sender: str, text: str) -> str:
         step = "read your profile"
         try:
+            if fb := self.wf.awaiting(sender):
+                step = "understand your message"
+                intent = self._intent(text)
+                if not (intent in ("order", "paid") or (intent in ("question", "change") and self._current(sender))):
+                    step = "save your feedback"
+                    return self._feedback(sender, fb, text)
+            step = "read your profile"
             profile = self.store.get(sender)
             if profile is None and not self.store.pending(sender):
                 step = "understand your message"
@@ -87,6 +164,8 @@ class Chat:
             intent = self._intent(text)
             if intent == "update":
                 step = "update your profile"
+                if self.memory:  # every profile change goes through memory's conflict loop
+                    return f"Updated. {self._summary(self.memory.add(sender, text, 'chat')['profile'])}"
                 facts = self._extract(text)
                 profile = profile.model_copy(update={k: _merge(getattr(profile, k), facts[k])
                                                      for k in ("allergens", "restrictions", "preferences")})
@@ -175,10 +254,17 @@ class Chat:
     def _onboard(self, sender: str, text: str) -> str:
         """The answer to the one question: save the profile, then shop at once if a request is known. Never re-asks."""
         remembered = self.store._path(sender, ".pending").read_text().strip()
-        facts = {"name": None, "allergens": [], "restrictions": [], "preferences": [], "request": None} \
-            if _NONE.fullmatch(text.strip()) else self._extract(text)
-        profile = self.store.save(GuestProfile(id=sender, name=facts["name"] or sender, allergens=facts["allergens"],
-                                               restrictions=facts["restrictions"], preferences=facts["preferences"]))
+        none = _NONE.fullmatch(text.strip())
+        if self.memory:
+            profile = self.store.save(GuestProfile(id=sender, name=sender))  # memory rewrites an existing profile
+            if not none:
+                profile = self.memory.add(sender, text, "chat")["profile"]
+            facts = {"request": None if none or remembered else self._extract(text)["request"]}
+        else:
+            facts = {"name": None, "allergens": [], "restrictions": [], "preferences": [], "request": None} \
+                if none else self._extract(text)
+            profile = self.store.save(GuestProfile(id=sender, name=facts["name"] or sender, allergens=facts["allergens"],
+                                                   restrictions=facts["restrictions"], preferences=facts["preferences"]))
         self.store.set_pending(sender, False)
         request = remembered or facts["request"]
         if not request:

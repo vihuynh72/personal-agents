@@ -1,0 +1,17 @@
+{
+  "note": "SYNTHETIC demo data. Rowan is a made-up person; no real messages, receipts or calendars. Used by scripts/import_history.py and agent/tests/test_memory.py.",
+  "items": [
+    {"source": "message", "when": "2025-11-02T18:04:00", "text": "Hi, I'm Rowan! Heads up for the potluck: I'm allergic to peanuts, so nothing with peanut please."},
+    {"source": "receipt", "when": "2025-11-20T10:12:00", "text": "Whole Foods order: organic spinach, organic strawberries, oat milk."},
+    {"source": "message", "when": "2025-12-10T20:30:00", "text": "I love cilantro, put it on everything."},
+    {"source": "message", "when": "2026-01-08T09:15:00", "text": "Folgers is my favorite brand, grabbed two more tubs of the classic roast."},
+    {"source": "calendar", "when": "2026-02-14T19:00:00", "text": "Dinner at Thai Basil with Sam."},
+    {"source": "receipt", "when": "2026-03-03T17:40:00", "text": "Safeway order: organic bananas, Folgers classic roast ground coffee."},
+    {"source": "receipt", "when": "2026-04-19T12:05:00", "text": "Bought Reese's peanut butter cups (gift for Sam's birthday)."},
+    {"source": "calendar", "when": "2026-05-23T09:00:00", "text": "Farmers market: pick up organic produce for the week."},
+    {"source": "message", "when": "2026-07-04T13:22:00", "text": "Honestly I can't stand cilantro anymore, it tastes like soap to me now."},
+    {"source": "receipt", "when": "2026-08-15T18:50:00", "text": "Whole Foods order: organic blueberries, organic greek yogurt."},
+    {"source": "message", "when": "2026-09-30T21:10:00", "text": "Still allergic to peanuts, please check the labels at the party."},
+    {"source": "calendar", "when": "2026-10-12T12:30:00", "text": "Lunch with Sam at Sweetgreen."}
+  ]
+}

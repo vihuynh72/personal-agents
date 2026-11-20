@@ -47,7 +47,8 @@ def test_watcher_fulfils_once_and_queues_one_receipt(tmp_path):
 
     client = TestClient(create_app(wf, c))
     msgs = client.get("/outbox").json()["messages"]
-    assert len(msgs) == 1 and msgs[0]["sender"] == ME
+    assert len(msgs) == 2 and {m["sender"] for m in msgs} == {ME}  # the receipt, then one follow-up
+    assert msgs[1]["text"].startswith("How was the")
     r = msgs[0]["text"]
     g = wf.get(gid)
     assert r.startswith("Paid. Order placed.") and "simulated" in r and len(r) < 900
@@ -74,7 +75,7 @@ def test_loop_survives_is_paid_errors(tmp_path):
             time.sleep(0.01)
     finally:
         stop.set()
-    assert wf.get(gid).status == "done" and len(wf.outbox_pop()) == 1
+    assert wf.get(gid).status == "done" and len(wf.outbox_pop()) == 2  # receipt + follow-up
 
 
 def test_non_chat_gathering_queues_nothing(tmp_path):
@@ -93,7 +94,8 @@ def test_paid_text_checks_now(tmp_path):
     tools.paid = True
     r = c.handle(ME, "I paid")
     assert r.startswith("Paid. Order placed.") and wf.get(gid).status == "done"
-    assert wf.outbox_pop() == []  # the reply carried the receipt; no duplicate text
+    out = wf.outbox_pop()  # the reply carried the receipt; no duplicate text, only the follow-up
+    assert len(out) == 1 and out[0]["text"].startswith("How was the")
 
 
 def test_stripe_session_id_survives_restart(tmp_path, monkeypatch):

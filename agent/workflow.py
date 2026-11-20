@@ -1,5 +1,6 @@
 """Master agent: runs the F1..F13 graph from docs/agent-graph.md, persists state, writes the audit trail (F10)."""
 import json
+import os
 import re
 import threading
 import uuid
@@ -554,7 +555,60 @@ class Workflow:
         if notify and (who := self.sender(g.id)):  # group dinners from POST /gatherings have no sender
             text = self.receipt(g.id)
             self._update("outbox.json", [], lambda d: d.append({"sender": who, "text": text}))
+        due = datetime.now(timezone.utc).timestamp() + float(os.environ.get("FEEDBACK_DELAY_SECONDS", "0") or 0)
+        self._update("followups.json", {}, lambda d: d.setdefault(g.id, {"due": due, "sent": False}))
+        self.send_followups()  # after the receipt; with a delay the watcher tick sends it later
         return g
+
+    # ---- F11 follow-up: one short question per reachable person, once per gathering ----
+
+    def _recipients(self, g: Gathering) -> list[dict]:
+        out, who = [], self.sender(g.id)
+        if who:
+            out.append({"to": who, "person": who, "name": None, "role": "host"})
+        if g.mode == "dinner":
+            for i in g.guest_ids:
+                p = self._profile(i)
+                if p.contact and p.contact not in {r["to"] for r in out}:
+                    out.append({"to": p.contact, "person": p.id, "name": p.name, "role": "guest", "host": who})
+        return out
+
+    def send_followups(self) -> int:
+        """Queue every due, unsent follow-up; marked sent in the same locked step, so restarts never duplicate."""
+        now, sent = datetime.now(timezone.utc).timestamp(), 0
+        with self._lock:
+            pending = self._update("followups.json", {}, lambda d: [k for k, v in d.items()
+                                                                    if not v["sent"] and v["due"] <= now])
+            for gid in pending:
+                g, audit = self._load(gid)
+                names = [i.product.name.split(",")[0] for i in (g.cart.items if g.cart else [])][:2]
+                text = (f"How was the {' and '.join(names) or 'order'}? Anything you'd skip or change next time? "
+                        "(One line is plenty.)")
+                people = self._recipients(g)
+                for r in people:
+                    self._update("outbox.json", [], lambda d, r=r: d.append({"sender": r["to"], "text": text}))
+                    self._update("awaiting.json", {}, lambda d, r=r: d.__setitem__(r["to"], {**r, "gathering_id": gid}))
+                self._log(audit, g, "F11", {"recipients": [r["person"] for r in people], "text": text},
+                          [f"profile:{r['person']}" for r in people], f"Sent the follow-up to {len(people)} people.")
+                self._save(g, audit)
+                self._update("followups.json", {}, lambda d, gid=gid: d[gid].__setitem__("sent", True))
+                sent += 1
+        return sent
+
+    def awaiting(self, phone: str) -> dict | None:
+        """The follow-up this phone has not answered yet: {gathering_id, person, name, role, host?}."""
+        p = self.dir / "notify" / "awaiting.json"  # read only: an unknown sender must not create files
+        with self._lock:
+            return json.loads(p.read_text()).get(phone) if p.exists() else None
+
+    def clear_awaiting(self, phone: str) -> None:
+        self._update("awaiting.json", {}, lambda d: d.pop(phone, None))
+
+    def log_event(self, gathering_id: str, node: str, inputs: dict, context: list[str], decision: str) -> None:
+        with self._lock:
+            g, audit = self._load(gathering_id)
+            self._log(audit, g, node, inputs, context, decision)
+            self._save(g, audit)
 
     def stop(self, gathering_id: str) -> Gathering:
         g, audit = self._load(gathering_id)

@@ -23,7 +23,26 @@ _FORBIDDEN = {
 class FakeLLM:
     """Deterministic stand-in; answers the prompts agent/workflow.py sends, keyed on their task tag."""
 
+    @staticmethod
+    def _memory(prompt: str) -> str:
+        """Naive keyword extractor for agent/memory.py; it reads receipts literally, so the safety rules get exercised."""
+        text = re.search(r"Text: (.+)", prompt, re.S).group(1).strip()
+        msg, ev = text.lower(), text[:200]
+        facts = [("name", n.lower(), "+") for n in re.findall(r"\b(?:I am|I'm|my name is)\s+([A-Z][a-z]+)", text)]
+        neg = re.search(r"\b(not|no longer) allergic|misdiagnos", msg)
+        facts += [("allergen", a, "-" if neg else "+") for a in re.findall(r"allergic to (\w+?)s?\b", msg)]
+        facts += [("allergen", a, "-") for a in re.findall(r"\bcan eat (\w+?)s? now", msg)]
+        facts += [("restriction", r, "+") for r in _FORBIDDEN if re.search(rf"\b{r}\b", msg)]
+        facts += [("preference", x, "+") for x in re.findall(r"\b(?:love|loved|enjoy|enjoyed) (?:the )?(\w+)", msg)]
+        facts += [("dislike", x, "+") for x in re.findall(r"\b(?:can't stand|hate|don't like) (?:the )?(\w+)", msg)]
+        facts += [("preference", x, "+") for x in re.findall(r"\b(\w+) is my favou?rite brand", msg)]
+        facts += [("preference", x.strip(), "+") for x in re.findall(r"\bbought ([\w' ]+)", msg)]
+        facts += [("preference", "organic", "+")] if "organic" in msg else []
+        return json.dumps([{"kind": k, "value": v, "polarity": p, "evidence": ev} for k, v, p in dict.fromkeys(facts)])
+
     def system1(self, prompt: str) -> str:
+        if "TASK: memory" in prompt:
+            return self._memory(prompt)
         if "TASK: profile" in prompt or "TASK: intent" in prompt:
             raw = re.search(r"Message: (.+)", prompt, re.S).group(1).strip()
             msg = raw.lower()
@@ -65,6 +84,8 @@ class FakeLLM:
             return re.search(r"Facts: (.+)", prompt).group(1)
         if "TASK: forbidden" in prompt:
             restriction = re.search(r"restriction: (.+)", prompt).group(1).strip().lower()
+            if restriction.startswith("no "):  # a remembered dislike, e.g. "no cilantro"
+                return json.dumps([restriction[3:]])
             return json.dumps(_FORBIDDEN.get(restriction, []))
         return json.dumps(["spaghetti", "marinara sauce", "salad", "sparkling water", "garlic bread"])
 

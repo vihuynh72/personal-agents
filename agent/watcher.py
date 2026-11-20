@@ -26,6 +26,10 @@ def tick(wf) -> None:
                 log.info("watcher: %s paid and fulfilled", gid)
         except Exception:
             log.exception("watcher: %s failed; will retry next tick", gid)
+    try:
+        wf.send_followups()  # delayed post-order follow-ups (FEEDBACK_DELAY_SECONDS)
+    except Exception:
+        log.exception("watcher: follow-ups failed; will retry next tick")
 
 
 def start(wf, interval: float | None = None) -> threading.Event:
