@@ -84,3 +84,29 @@ Real-retailer ordering: Walmart announced an official Agent Gateway (an MCP serv
 Firedrill, later runs: drill 8 scored 73.5 of 100 (threshold 75). One turn replied "couldn't save your profile and build your cart"; the cause was not reproduced afterwards (the same messages succeed), and code was being edited on the machine while that drill ran. Drill 9, run on the same code with nothing being edited, scored 94 of 100 and passed (campaign `87904274-fcd1-4e21-aaa6-22488a134ffc`).
 
 Teammates' work on `main`: Ketki's `tools/` (guest profiles in Cognee, calendar availability with Google sign-in and an Airbyte sync), Jing's pitch script. Ryan's UI had not been pushed as of 3:23 PM.
+
+## Final state at the 4:00 PM code freeze
+
+Live at https://personal-agents-production-81468651.up.railway.app
+
+| Address | What it is |
+|---------|------------|
+| `/try` | Enter a phone number and talk to the real agent in the browser. Same agent, profile, memory and orders as the iMessage line. Nothing scripted. |
+| `/app` | Ryan's front end. Sign-in, food profile and Google connect use the backend; the dinner conversation in it is a scripted walkthrough. |
+| `/cart/<id>` | The order page a text links to: items, store links, quantity, shipping, estimated tax, total, Pay with Stripe (test mode), audit trail. |
+| `/demo-store` | Our own store, where the cloud ordering agent completes checkout after payment. |
+| `/a2a/plan` | Agent-to-agent planning for a host and guests. |
+
+Added in the last hour: cook versus order-in routing (a meal request orders prepared food unless the person says they want to cook; prepared food comes from a labelled sample menu); the follow-up question waits until 24 hours after the estimated arrival; receipts list order numbers without retailer or "simulated" wording, while the order page and audit trail still record that the retailer step is simulated.
+
+Tests: 172 passing. Firedrill: last run 94 of 100.
+
+## Next steps (not built)
+
+1. Replace the scripted conversation in `web/` with the agent's replies from `POST /messages`, and redraw its cards from live order data.
+2. Real retailer ordering through Walmart's Agent Gateway (invite-only beta; apply through Walmart's developer portal). Stripe Issuing for the single-use card.
+3. Age verification with Persona before checkout. No Persona account or key was available today.
+4. Location and travel: read trips from calendar events and travel emails, store them as away dates, and have a guest's agent answer "not available" without saying where they are.
+5. Real delivery-app menus for the order-in route.
+6. A one-tap cook or order-in switch on the order page.
+7. Rebuild the knowledge graph in `graphify-out/`; it was last built before the code existed.
