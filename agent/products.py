@@ -162,6 +162,25 @@ def _load(path: Path) -> list[Product] | None:
 
 
 class BrightDataTools(StripeTools):
+    def place_order(self, cart, source: str) -> str:
+        """F13: an agent in a cloud browser checks out on our own demo store (never a real retailer)."""
+        if not os.environ.get("CLOUD_ORDERING"):
+            return super().place_order(cart, source)
+        try:
+            from agent.cloud_order import demo_card, place_order_in_cloud
+            from agent.pricing import quote
+            items = [{"sku": i.product.id, "name": i.product.name, "price": i.product.price, "quantity": i.quantity}
+                     for i in cart.items if i.product.source == source]
+            card = demo_card(cart.gathering_id, quote(cart)["total"])
+            base = os.environ.get("PUBLIC_URL", "https://personal-agents-production-81468651.up.railway.app")
+            res = place_order_in_cloud(base, items, "Shopper", cart.ship_to, card["number"], card["exp"], card["cvc"])
+            if res.get("ok"):
+                return f"{res['order_id']} (demo store, placed by cloud {res.get('path')})"
+            log.warning("cloud ordering failed: %s", res.get("error"))
+        except Exception as e:
+            log.warning("cloud ordering failed: %r", e)
+        return super().place_order(cart, source)
+
     def search_products(self, query: str, ship_to: str) -> list[Product]:
         found = self._search_stores(query, ship_to)
         if FOOD.search(query):

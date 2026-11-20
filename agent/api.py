@@ -137,6 +137,8 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
 
     from agent import a2a
     conns = a2a.Connections(str(profiles.dir.parent))
+    from agent import mockstore  # our own demo retailer, for the cloud ordering step
+    app.include_router(mockstore.make_router(str(profiles.dir.parent)))
 
     def _llm():
         if getattr(workflow, "llm", None) is None:
