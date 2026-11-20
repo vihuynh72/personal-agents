@@ -42,9 +42,9 @@ def cognee():
 
 
 def airbyte():
-    # Airbyte Agents (app.airbyte.ai), not Airbyte Cloud: different host and no grant type.
-    out = call("https://api.airbyte.ai/api/v1/account/applications/token", body={
-        "client_id": E("AIRBYTE_CLIENT_ID"), "client_secret": E("AIRBYTE_CLIENT_SECRET")})
+    # Self-hosted Airbyte installed with `abctl local install`; only reachable from this machine.
+    out = call(E("AIRBYTE_URL", "http://localhost:8000") + "/api/v1/applications/token", body={
+        "client_id": E("AIRBYTE_CLIENT_ID"), "client_secret": E("AIRBYTE_CLIENT_SECRET"), "grant-type": "client_credentials"})
     assert "access_token" in out
 
 
