@@ -20,3 +20,7 @@ graphify-out/cost.json
 __pycache__/
 .data/
 firedrill/local-plan.json
+.playwright-mcp/
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
