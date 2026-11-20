@@ -51,8 +51,8 @@ def test_f6_audit_has_senso_context_and_trimmed_chunk(tmp_path):
     f10 = [e for e in audit if e.node_id == "F10"]
     assert len(f10) == 1 and f10[0].context_used == ["senso:eval_run_id=run-1"]
     assert f10[0].inputs["question"] == "dinner at my place Saturday for six"
-    assert "Spaghetti from StoreA costs $1.98" in f10[0].inputs["statement"]
-    assert "Spaghetti does not contain egg." in f10[0].inputs["statement"]
+    assert "Our catalog lists Spaghetti from StoreA at $1.98." in f10[0].inputs["statement"]
+    assert "In our catalog, Spaghetti does not list egg as an ingredient." in f10[0].inputs["statement"]
 
 
 def test_no_context_marks_unknown_but_keeps_item(tmp_path):
@@ -152,8 +152,8 @@ def test_check_request_finished_and_pending(sent):
     out = Senso().check("text", "question")
     _, url, headers, body, timeout = calls[0]
     assert url == "https://apiv2.senso.ai/api/v1/org/evals/text" and headers["X-API-Key"] == "k-test"
-    assert body == {"text": "text", "question": "question", "author": "ai_assistant", "wait": True} and timeout == 60
+    assert body == {"text": "text", "question": "question", "author": "organization", "wait": True} and timeout == 60
     assert out["id"] == "r1" and out["status"] == "completed"
-    assert out["claims"] == [{"claim_text": "a", "source_text": "a.", "verdict": "conflict", "reasoning": "why"}]
+    assert out["claims"] == [{"claim_text": "a", "source_text": "a.", "verdict": "conflict", "reasoning": "why", "quote": None, "evidence": None}]
     fake.reply = (202, {"eval_run_id": "r2", "status": "running"})
     assert Senso().check("t", "q") == {"id": "r2", "status": "pending", "accuracy_pct": None, "band": None, "claims": []}

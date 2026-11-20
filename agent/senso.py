@@ -22,7 +22,7 @@ class Senso:
             raise RuntimeError("SENSO_API_KEY is not set")
 
     def _call(self, method: str, path: str, body: dict | None = None, timeout: float = 30):
-        return _http(method, BASE + path, {"X-API-Key": self.key, "Content-Type": "application/json"}, body, timeout)
+        return _http(method, BASE + path, {"X-API-Key": self.key, "Content-Type": "application/json", "User-Agent": "personal-agents/0.1"}, body, timeout)
 
     def add_document(self, title: str, text: str) -> dict:
         """POST /org/kb/raw -> 202 ContentResponse (id, kb_node_id, processing_status). Searchable once ingestion finishes."""
@@ -36,9 +36,9 @@ class Senso:
     def check(self, text: str, question: str) -> dict:
         """POST /org/evals/text with wait=true: 200 = finished run, 202 = run handle (still going, status 'pending')."""
         code, run = self._call("POST", "/org/evals/text", {
-            "text": text, "question": question[:2000], "author": "ai_assistant", "wait": True}, timeout=60)
+            "text": text, "question": question[:2000], "author": "organization", "wait": True}, timeout=60)
         done = code == 200 and run.get("status") in _DONE
         return {"id": run.get("eval_run_id"), "status": run["status"] if done else "pending",
                 "accuracy_pct": run.get("accuracy_pct"), "band": run.get("band"),
-                "claims": [{k: c.get(k) for k in ("claim_text", "source_text", "verdict", "reasoning")}
+                "claims": [{k: c.get(k) for k in ("claim_text", "source_text", "verdict", "reasoning", "quote", "evidence")}
                            for c in run.get("claims", [])]}

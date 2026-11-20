@@ -281,16 +281,21 @@ class Workflow:
     def _senso_check(self, g: Gathering, audit: list[AuditEvent], profiles: list[GuestProfile]) -> None:
         """Senso fact-check of the cart's claims before checkout; one F10 event. Never blocks checkout."""
         items = g.cart.items
-        lines = [f"{i.product.name} from {i.product.source} costs ${i.product.price} and contains "
-                 f"{', '.join(i.product.ingredients) or 'an ingredient list the store does not publish'}." for i in items]
+        # Senso only scores claims about the organization's own content, so each claim is phrased as
+        # "our catalog" and sent as author=organization; plain "X costs $Y" comes back unscored.
+        lines = []
         for i in items:
-            if i.status == "pass":  # only products whose ingredients were actually checked may claim safety
-                lines += [f"{i.product.name} does not contain {a}." for a in sorted({a for p in profiles for a in p.allergens})]
-                lines += [f"{i.product.name} is suitable for a {r} diet." for r in sorted({r for p in profiles for r in p.restrictions})]
+            n = i.product.name
+            lines.append(f"Our catalog lists {n} from {i.product.source} at ${i.product.price:.2f}.")
+            if i.product.ingredients:
+                lines.append(f"In our catalog, the ingredients of {n} are {', '.join(i.product.ingredients)}.")
+            if i.status == "pass":  # only products whose ingredients were actually checked may claim this
+                lines += [f"In our catalog, {n} does not list {a} as an ingredient."
+                          for a in sorted({a for p in profiles for a in p.allergens})]
         text = " ".join(lines)
         inputs, ctx = {"senso": "fact_check", "statement": text, "question": g.request}, []
         try:
-            res = self.senso.check(text, g.request)
+            res = self.senso.check(text, f"{g.request} (checking this cart against our catalog)")
         except Exception as e:
             self._log(audit, g, "F10", inputs, ctx, f"Senso fact-check failed: {e}. Checkout not blocked.")
             return
