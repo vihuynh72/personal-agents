@@ -1,0 +1,26 @@
+{
+  "README.md": {
+    "mtime": 1795200267.8054812,
+    "seen": 1795206276.296407,
+    "ast_hash": "08b9fc2a1515eda9f8f8c57721a75718",
+    "semantic_hash": "08b9fc2a1515eda9f8f8c57721a75718"
+  },
+  "docs/agentic-graph-guide.md": {
+    "mtime": 1795205947.3294275,
+    "seen": 1795206276.2964108,
+    "ast_hash": "84247fd417702535b3c22f640b2e4a73",
+    "semantic_hash": "84247fd417702535b3c22f640b2e4a73"
+  },
+  "docs/brainstorm.md": {
+    "mtime": 1795205933.4291875,
+    "seen": 1795206276.296412,
+    "ast_hash": "41f091376e57b24c921be351e2b49b26",
+    "semantic_hash": "41f091376e57b24c921be351e2b49b26"
+  },
+  "docs/hackathon-brief.md": {
+    "mtime": 1795205964.6718736,
+    "seen": 1795206276.296413,
+    "ast_hash": "3db4ebeb51b9de15124fda2ec1f833bd",
+    "semantic_hash": "3db4ebeb51b9de15124fda2ec1f833bd"
+  }
+}
