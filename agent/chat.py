@@ -11,6 +11,7 @@ import re
 
 from contracts.models import GuestProfile
 
+from .connect import hint
 from .profiles import ProfileStore
 from .llm import FakeLLM
 from .workflow import Workflow, _ask
@@ -156,7 +157,7 @@ class Chat:
                 self.store.set_pending(sender, True)
                 # shortcut: the remembered request lives in the pending marker file; ProfileStore has no field for it
                 self.store._path(sender, ".pending").write_text(request)
-                return ASK_ONE if request else ONBOARD
+                return (ASK_ONE if request else ONBOARD) + hint(sender)
             if profile is None:
                 step = "save your profile and build your cart"
                 return self._onboard(sender, text)

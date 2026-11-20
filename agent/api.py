@@ -1,9 +1,12 @@
 """HTTP surface for the agent (node N3). web/ talks only to this."""
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
+from agent.profiles import _SAFE
 from contracts.models import GuestProfile
 
 
@@ -120,6 +123,32 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
     @app.get("/profiles/{pid}/memory")
     def memory_history(pid: str):
         return _memory().history(pid)
+
+    from agent import connect
+    _OFF = {"detail": "Google connect is not configured (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET unset)."}
+
+    @app.get("/connect/google")  # day 0, self-serve: the link in the first text
+    def connect_google(sender: str):
+        if (c := connect.config()) is None:
+            return JSONResponse(_OFF, status_code=503)
+        if not _SAFE.fullmatch(sender):
+            return JSONResponse({"detail": "invalid sender"}, status_code=400)
+        return RedirectResponse(connect.auth_url(c, connect.new_state(profiles.dir.parent, sender)), status_code=302)
+
+    @app.get("/connect/google/callback")
+    def connect_callback(code: str = "", state: str = ""):
+        if (c := connect.config()) is None:
+            return JSONResponse(_OFF, status_code=503)
+        if not code or (sender := connect.take_state(profiles.dir.parent, state)) is None:
+            return JSONResponse({"detail": "unknown or expired link; text me to get a new one"}, status_code=400)
+        try:
+            fetch = connect.make_fetcher(connect.exchange(c, code))  # the token lives only in this closure
+        except Exception:
+            logging.getLogger(__name__).exception("google token exchange failed")
+            return HTMLResponse("Couldn't connect Google. Text me anything you can't have instead.", status_code=502)
+        mem = _memory()
+        connect.start(lambda: connect.run_import(sender, fetch, mem, workflow, profiles))
+        return HTMLResponse(connect.PAGE)
 
     return app
 
