@@ -1,6 +1,8 @@
 """HTTP surface for the agent (node N3). web/ talks only to this."""
 import logging
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -137,6 +139,16 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
 
     from agent import a2a
     conns = a2a.Connections(str(profiles.dir.parent))
+    # Ryan's front end (web/), built with `vite build --base=/app/` and copied to agent/web_dist.
+    _web = Path(__file__).parent / "web_dist"
+    if _web.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        from fastapi.responses import RedirectResponse as _Redirect
+        app.mount("/app", StaticFiles(directory=str(_web), html=True), name="web")
+
+        @app.get("/", include_in_schema=False)
+        def _home():
+            return _Redirect("/app/")
     from agent import mockstore  # our own demo retailer, for the cloud ordering step
     app.include_router(mockstore.make_router(str(profiles.dir.parent)))
 
