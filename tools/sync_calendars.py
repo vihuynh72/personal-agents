@@ -1,14 +1,18 @@
 """Airbyte -> Cognee. For each connected person, Airbyte's Google Calendar connector (run through PyAirbyte, no
 Airbyte server) reads the `freebusy` stream, and the busy blocks go to the shared Cognee dataset guest_availability.
 
-PyAirbyte needs Python 3.12 and is not a project dependency, so run it in its own environment:
+Nobody presses sync: whoever runs this keeps every connected person fresh on a loop (the demo page starts the
+same loop). PyAirbyte needs Python 3.12 and is not a project dependency, so run it in its own environment:
   set -a && . ./.env && set +a
-  uv run --no-project --python 3.12 --with airbyte --with pydantic python -m tools.sync_calendars g1 [g4 ...]
+  uv run --no-project --python 3.12 --with airbyte --with pydantic python -m tools.sync_calendars   # loop forever
+  uv run --no-project --python 3.12 --with airbyte --with pydantic python -m tools.sync_calendars --once
 """
+import logging
 import os
 import shutil
 import sys
 import tempfile
+import threading
 from datetime import datetime, timedelta, timezone
 
 from tools import google_calendar as gc
@@ -16,6 +20,9 @@ from tools.availability import AIRBYTE, record_text, replace_record
 from tools.cognee import Cognee
 
 CONNECTOR = "source-google-calendar"
+log = logging.getLogger(__name__)
+INTERVAL = int(os.environ.get("CALENDAR_SYNC_SECONDS", "120"))
+_lock = threading.Lock()  # one Airbyte read at a time (loop and a fresh Allow can overlap)
 
 
 def _window(now: datetime) -> tuple[str, str]:
@@ -71,16 +78,45 @@ def sync_person(person_id: str, name: str, cognee: Cognee | None = None, reader=
     if token is None:
         raise LookupError(f"{person_id} has not connected a calendar")
     now = now or datetime.now(timezone.utc)
-    busy = reader(token)
+    with _lock:
+        busy = reader(token)
     text = record_text(person_id, name, busy, _window(now), AIRBYTE, now.strftime("%Y-%m-%dT%H:%M:%SZ"))
     replace_record(cognee or Cognee(), person_id, text)
     return len(busy)
 
 
+def connected() -> list[str]:
+    """Everyone who tapped Allow and has not disconnected."""
+    return sorted(f.stem for f in gc.TOKENS.glob("*.json")) if gc.TOKENS.exists() else []
+
+
+def sync_all(names: dict[str, str], cognee: Cognee | None = None, reader=read_busy) -> dict[str, int | str]:
+    """One pass over every connected person. A failure for one person is reported and leaves their last record;
+    it never stops the others."""
+    out: dict[str, int | str] = {}
+    for pid in connected():
+        try:
+            out[pid] = sync_person(pid, names.get(pid, pid), cognee, reader)
+        except Exception as e:
+            log.warning("calendar sync failed for %s: %r", pid, e)
+            out[pid] = f"failed: {type(e).__name__}"
+    return out
+
+
+def run_forever(names_fn, interval: int = INTERVAL, stop: threading.Event | None = None) -> None:
+    """The agent's own loop: re-read every connected calendar through Airbyte every `interval` seconds."""
+    stop = stop or threading.Event()
+    while not stop.is_set():
+        log.info("calendar sync pass: %s", sync_all(names_fn()))
+        stop.wait(interval)
+
+
 if __name__ == "__main__":
     from tools.real import load_profiles
 
-    names = {p.id: p.name for p in load_profiles().values()}
-    for pid in sys.argv[1:]:
-        n = sync_person(pid, names.get(pid, pid))
-        print(f"{pid}: synced {n} busy block(s) through Airbyte into Cognee guest_availability")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    names = lambda: {p.id: p.name for p in load_profiles().values()}  # noqa: E731  re-read: profiles can change
+    if "--once" in sys.argv:
+        print(sync_all(names()))
+    else:
+        run_forever(names)
