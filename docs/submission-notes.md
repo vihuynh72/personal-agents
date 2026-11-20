@@ -81,6 +81,6 @@ Campaign ids: drill 6 `bef505df-1f17-422c-8641-5e6a7d04cb64`, drill 7 `66929dc6-
 
 Real-retailer ordering: Walmart announced an official Agent Gateway (an MCP server for approved agents) in October 2026, reported as invite-only. That is the intended production route. Target has no equivalent that we found.
 
-Firedrill, later runs: drill 8 scored 73.5 of 100 (threshold 75). One turn replied "couldn't save your profile and build your cart"; the cause was not reproduced afterwards (the same messages succeed), and code was being edited on the machine while that drill ran. A ninth drill is recorded in the campaign list if it finished.
+Firedrill, later runs: drill 8 scored 73.5 of 100 (threshold 75). One turn replied "couldn't save your profile and build your cart"; the cause was not reproduced afterwards (the same messages succeed), and code was being edited on the machine while that drill ran. Drill 9, run on the same code with nothing being edited, scored 94 of 100 and passed (campaign `87904274-fcd1-4e21-aaa6-22488a134ffc`).
 
 Teammates' work on `main`: Ketki's `tools/` (guest profiles in Cognee, calendar availability with Google sign-in and an Airbyte sync), Jing's pitch script. Ryan's UI had not been pushed as of 3:23 PM.
