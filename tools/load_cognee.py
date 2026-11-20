@@ -1,8 +1,8 @@
 """Push tools/profiles.json and the simulated demo availability into the shared Cognee workspace. Run after editing:
 set -a && . ./.env && set +a && uv run python -m tools.load_cognee
 
-Simulated availability covers only synthetic guests (Sam busy-free, Jamie busy at 7 PM, Marco free); Lee stays
-pending on purpose. Real people get availability only by connecting Google (tools/sync_calendars.py).
+Simulated availability covers only synthetic guests and follows the story in web/src/App.tsx (Sam free evenings,
+Jamie busy Saturday, Marco free, Lee away until Sunday). Real people get availability only by connecting Google.
 """
 import json
 from datetime import datetime, timezone

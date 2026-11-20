@@ -7,15 +7,19 @@ Nobody presses sync: the page starts the agent's loop, which re-reads every conn
 """
 import html
 import logging
+import os
 import threading
+import urllib.parse
+from contextlib import asynccontextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from tools import google_calendar as gc
-from tools.availability import AIRBYTE, SIMULATED, availability, forget
+from tools.availability import AIRBYTE, SIMULATED, availability, decide, forget, records
 from tools.cognee import Cognee
 from tools.real import load_profiles
 from tools.sync_calendars import INTERVAL, run_forever, sync_person
@@ -25,14 +29,28 @@ PT = ZoneInfo("America/Los_Angeles")
 START, END = datetime(2026, 11, 21, 19, 0, tzinfo=PT), datetime(2026, 11, 21, 21, 0, tzinfo=PT)
 REAL = {"g1", "g4"}  # teammates with real Google accounts; everyone else is a synthetic demo guest
 
-app = FastAPI()
-_notice = {"text": ""}
+# Ryan's web/ (Vite dev server) reads availability and sends people here to connect.
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
+# The dinner times offered in web/src/data.ts SLOTS (two hours each, Pacific).
+SLOTS = {
+    "fri730": (datetime(2026, 11, 27, 19, 30, tzinfo=PT), datetime(2026, 11, 27, 21, 30, tzinfo=PT)),
+    "sat7": (datetime(2026, 11, 28, 19, 0, tzinfo=PT), datetime(2026, 11, 28, 21, 0, tzinfo=PT)),
+    "sun6": (datetime(2026, 11, 29, 18, 0, tzinfo=PT), datetime(2026, 11, 29, 20, 0, tzinfo=PT)),
+}
 
-
-@app.on_event("startup")
-def _start_auto_sync():
-    names = lambda: {p.id: p.name for p in load_profiles().values()}  # noqa: E731
+@asynccontextmanager
+async def _lifespan(_app):
+    # The agent's own loop: nobody presses sync.
+    names = lambda: {p.id: p.name for p in load_profiles().values()}  # noqa: E731  (sync_all falls back to the id)
     threading.Thread(target=run_forever, args=(names,), daemon=True, name="calendar-sync").start()
+    yield
+
+
+app = FastAPI(lifespan=_lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=[FRONTEND_ORIGIN], allow_methods=["GET"], allow_headers=["*"])
+_notice = {"text": ""}
+_return_to: dict[str, str] = {}  # person id -> web/ page to land on after Google
+
 
 
 def _row(p, a) -> str:
@@ -81,23 +99,56 @@ The agent re-syncs every connected calendar every {INTERVAL // 60} min on its ow
 
 
 @app.get("/connect/{pid}")
-def connect(pid: str):
+def connect(pid: str, return_to: str = ""):
+    if return_to:  # only back to our own front end, never to an arbitrary site
+        if not (return_to == FRONTEND_ORIGIN or return_to.startswith(FRONTEND_ORIGIN + "/")):
+            raise HTTPException(400, "return_to must be on the front end's origin")
+        _return_to[gc.check_id(pid)] = return_to
     return RedirectResponse(gc.connect_url(pid))
+
+
+def _name(pid: str) -> str:
+    """Guests have a profile (g1..g6); a person signed in on web/ by email may not yet."""
+    p = load_profiles().get(pid)
+    return p.name if p else pid
+
+
+def _back(pid: str, outcome: str) -> RedirectResponse:
+    url = _return_to.pop(pid, None)
+    if not url:
+        return RedirectResponse("/", status_code=303)
+    sep = "&" if "?" in url else "?"
+    return RedirectResponse(f"{url}{sep}{urllib.parse.urlencode({'calendar': outcome, 'id': pid})}", status_code=303)
 
 
 @app.get("/oauth/google/callback")
 def callback(state: str = "", code: str = "", error: str = ""):
+    pid = state.rpartition(".")[0]
     if error:  # the person pressed Cancel / Decline on Google's screen
         _notice["text"] = "Declined on Google's screen, so this guest stays pending."
-        return RedirectResponse("/", status_code=303)
+        return _back(pid, "declined")
     try:
         pid = gc.finish_connect(code, state)
-        n = sync_person(pid, load_profiles()[pid].name)
+        n = sync_person(pid, _name(pid))
         _notice["text"] = f"Connected. Airbyte read {n} busy block(s) and saved them to Cognee."
+        return _back(pid, "connected")
     except Exception as e:
         log.warning("connect failed: %r", e)
         _notice["text"] = f"Connect failed: {e}"
-    return RedirectResponse("/", status_code=303)
+        return _back(pid, "failed")
+
+
+@app.get("/api/availability")
+def api_availability(ids: str, slots: str = ",".join(SLOTS)):
+    """For web/: {"people": {id: {slot: {"status", "source", "synced_at"}}}} from Cognee.
+    status is free | busy | pending; source is "airbyte/source-google-calendar", "simulated" or null."""
+    people = [gc.check_id(i) for i in ids.split(",") if i]
+    wanted = [x for x in slots.split(",") if x]
+    if unknown := [x for x in wanted if x not in SLOTS]:
+        raise HTTPException(400, f"unknown slot(s): {unknown}")
+    recs = records()  # one Cognee read for every person and slot
+    out = {pid: {x: vars(decide(recs.get(pid, (None, None))[1], *SLOTS[x])) for x in wanted} for pid in people}
+    return {"people": out, "connected": [pid for pid in people if gc.is_connected(pid)]}
 
 
 @app.post("/disconnect/{pid}")
