@@ -90,6 +90,10 @@ def __getattr__(name):  # lazy `app` so importing this module (tests) needs neit
                 tools = StripeTools()
             else:
                 tools = FakeTools()
-            _app = create_app(Workflow(tools, get_llm()))
+            senso = None
+            if os.environ.get("SENSO_API_KEY"):
+                from agent.senso import Senso
+                senso = Senso()
+            _app = create_app(Workflow(tools, get_llm(), senso=senso))
         return _app
     raise AttributeError(name)

@@ -48,6 +48,12 @@ def airbyte():
     assert "access_token" in out
 
 
+def senso():
+    out = call("https://apiv2.senso.ai/api/v1/org/search/context", {"X-API-Key": E("SENSO_API_KEY")},
+               {"query": "coffee", "max_results": 1})  # urlopen raises on any non-2xx
+    assert "results" in json.loads(out)
+
+
 def elevenlabs():
     call("https://api.elevenlabs.io/v1/voices/" + E("ELEVENLABS_VOICE_ID"), {"xi-api-key": E("ELEVENLABS_API_KEY")})
 
@@ -67,7 +73,7 @@ CHECKS = {
     "Railway API": (railway, []),
     "Photon iMessage": (None, ["PHOTON_PROJECT_ID", "PHOTON_PROJECT_SECRET"]),
     "Persona": (None, ["PERSONA_API_KEY"]),
-    "Senso": (None, ["SENSO_API_KEY"]),
+    "Senso": (senso, ["SENSO_API_KEY"]),
     "Guild AI": (None, ["GUILD_API_KEY"]),
     "Firedrill": (None, ["FIREDRILL_API_KEY"]),
 }

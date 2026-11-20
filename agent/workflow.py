@@ -52,8 +52,8 @@ def _matches(banned: str, ingredient: str) -> bool:
 
 
 class Workflow:
-    def __init__(self, tools: Tools, llm: LLM, data_dir: str = ".data"):
-        self.tools, self.llm = tools, llm
+    def __init__(self, tools: Tools, llm: LLM, data_dir: str = ".data", senso=None):
+        self.tools, self.llm, self.senso = tools, llm, senso  # senso: optional agent.senso.Senso; None leaves the flow unchanged
         self.dir = Path(data_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self._forbidden: dict[str, list[str] | None] = {}  # None: expansion failed, products become unknown
@@ -173,6 +173,8 @@ class Workflow:
                     items.setdefault(it.product.id, it)
             items = list(items.values())
             g.cart = Cart(gathering_id=g.id, ship_to=g.ship_to, items=items)
+            if self.senso and items:
+                self._senso_check(g, audit, profiles)
             self._checkout(g, audit, "Built the cart")
         except Exception:
             g.status = "awaiting_plan_approval"  # nothing was bought; let the host approve again instead of sticking
@@ -241,6 +243,14 @@ class Workflow:
         unknown.sort(key=lambda p: p.price)
         ranked = passing + unknown
         best = ranked[0]
+        senso_note, no_context = "", False
+        if self.senso:
+            ctx, text = self._senso_search(g, audit, best)  # text None: the call failed and was audited
+            context += ctx
+            if text is not None:
+                inputs["senso"] = text
+                no_context = not ctx
+                senso_note = " Senso: no supporting context in Senso." if no_context else " Senso: supporting context found."
         if passing:
             sources = len({p.source for p in passing})
             reason = self._checks(profiles) + \
@@ -249,9 +259,59 @@ class Workflow:
         else:
             reason = self._unknown_reason(notes[best.id]) + " No option passed every check."
             status, alerts = "unknown", notes[best.id]
+        if no_context:  # Senso answered but had nothing: never call it safe
+            alert = "Senso context could not confirm this product"
+            status, alerts = "unknown", alerts + [alert]
+            reason += f" {alert}; not confirmed safe."
         self._log(audit, g, "F6", inputs, context,
-                  f"Chose {best.name} ({best.pack_size}) from {best.source} at ${best.price} [{status}]. {reason}")
+                  f"Chose {best.name} ({best.pack_size}) from {best.source} at ${best.price} [{status}]. {reason}{senso_note}")
         return CartItem(product=best, alternatives=ranked[1:], reason=reason, status=status, alerts=alerts)
+
+    def _senso_search(self, g, audit, p: Product) -> tuple[list[str], str | None]:
+        """Trusted context for one chosen product: (context_used strings, top chunk or the no-context sentence)."""
+        try:
+            hits = self.senso.search(f"{p.name} {', '.join(p.ingredients)}"[:500])
+        except Exception as e:
+            self._log(audit, g, "F10", {"senso": "search", "product": p.id}, [], f"Senso search failed: {e}. Continued without it.")
+            return [], None
+        ctx = [f"senso:content_id={h.get('content_id')} version={h.get('version_id')} rank={h.get('rank')} score={h.get('score')}"
+               for h in hits]
+        return ctx, (hits[0].get("chunk_text") or "")[:200] if hits else "no supporting context in Senso"
+
+    def _senso_check(self, g: Gathering, audit: list[AuditEvent], profiles: list[GuestProfile]) -> None:
+        """Senso fact-check of the cart's claims before checkout; one F10 event. Never blocks checkout."""
+        items = g.cart.items
+        lines = [f"{i.product.name} from {i.product.source} costs ${i.product.price} and contains "
+                 f"{', '.join(i.product.ingredients) or 'an ingredient list the store does not publish'}." for i in items]
+        for i in items:
+            if i.status == "pass":  # only products whose ingredients were actually checked may claim safety
+                lines += [f"{i.product.name} does not contain {a}." for a in sorted({a for p in profiles for a in p.allergens})]
+                lines += [f"{i.product.name} is suitable for a {r} diet." for r in sorted({r for p in profiles for r in p.restrictions})]
+        text = " ".join(lines)
+        inputs, ctx = {"senso": "fact_check", "statement": text, "question": g.request}, []
+        try:
+            res = self.senso.check(text, g.request)
+        except Exception as e:
+            self._log(audit, g, "F10", inputs, ctx, f"Senso fact-check failed: {e}. Checkout not blocked.")
+            return
+        inputs["claims"] = [{"claim": c.get("claim_text"), "verdict": c.get("verdict")} for c in res.get("claims", [])]
+        ctx = [f"senso:eval_run_id={res.get('id')}"]
+        # shortcut: a claim is tied to an item by the product name appearing in its text; upgrade if the judge paraphrases names
+        hit = lambda verdict: [i for i in items if any(
+            i.product.name.lower() in f"{c.get('claim_text')} {c.get('source_text')}".lower()
+            for c in res.get("claims", []) if c.get("verdict") == verdict)]
+        conflicts = hit("conflict")
+        unsupported = [i for i in hit("unsupported") if i not in conflicts]
+        for i in unsupported:
+            i.status = "unknown"
+            i.alerts = i.alerts + ["Senso could not support a claim about this product"]
+        g.cart.items = [i for i in items if i not in conflicts]
+        tally = ", ".join(f"{n} {v}" for v in ("verified", "conflict", "unsupported", "not_verifiable")
+                          if (n := sum(c.get("verdict") == v for c in res.get("claims", []))))
+        self._log(audit, g, "F10", inputs, ctx,
+                  f"Senso fact-check {res.get('status')} (run {res.get('id')}): {tally or 'no claim verdicts'}. "
+                  + (f"Removed before checkout, claim conflicts with Senso context: {', '.join(i.product.name for i in conflicts)}. " if conflicts else "")
+                  + (f"Marked unknown, claim unsupported: {', '.join(i.product.name for i in unsupported)}." if unsupported else ""))
 
     def _checkout(self, g: Gathering, audit: list[AuditEvent], what: str) -> None:
         g.checkout_url = self.tools.create_checkout(g.cart)
