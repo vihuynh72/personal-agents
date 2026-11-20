@@ -112,3 +112,71 @@ def test_same_product_is_not_added_twice(tmp_path):
     g = w.approve_plan(w.start("Vi", "dinner", "addr", ["g1", "g2", "g3", "g4"]).id)
     ids = [i.product.id for i in g.cart.items]
     assert len(ids) == len(set(ids))
+
+
+def test_self_mode_coffee_for_peanut_allergy(tmp_path):
+    wf = _wf(tmp_path)
+    g = wf.start("Vi", "get me coffee", "1 Main St", ["g3"])
+    assert (g.mode, g.status, g.menu, g.when) == ("self", "awaiting_plan_approval", ["ground coffee"], None)
+    g = wf.approve_plan(g.id)
+    assert g.status == "awaiting_payment" and len(g.cart.items) == 1
+    item = g.cart.items[0]
+    assert (item.product.id, item.status, item.alerts) == ("a-coffee", "pass", [])
+    assert "a-hazelcoffee" not in {p.id for p in [item.product, *item.alternatives]}
+    assert [a.id for a in item.alternatives] == ["b-coffee", "b-bulkcoffee"]  # passing first, then unknown
+    nodes = [e.node_id for e in wf.audit(g.id)]
+    assert "F3" not in nodes and "F4" not in nodes
+    f6 = next(e for e in wf.audit(g.id) if e.node_id == "F6")
+    assert f6.inputs["rejected"] == {"a-hazelcoffee": ["peanut (Chen)"]}
+    g = wf.update_cart(g.id, [{"product_id": "a-coffee", "swap_to": "b-bulkcoffee"}])
+    swapped = g.cart.items[0]
+    assert swapped.status == "unknown" and "ingredient list not available" in swapped.alerts
+    assert wf.mark_paid(g.id).status == "done"
+
+
+def test_unknown_only_when_nothing_passes(tmp_path, monkeypatch):
+    from contracts import fixtures
+    monkeypatch.setattr(fixtures, "CATALOG", [p for p in fixtures.CATALOG if p.id != "a-coffee" and p.id != "b-coffee"])
+    wf = _wf(tmp_path)
+    g = wf.approve_plan(wf.start("Vi", "get me coffee", "1 Main St", ["g3"]).id)
+    item = g.cart.items[0]
+    assert (item.product.id, item.status) == ("b-bulkcoffee", "unknown")
+    assert "Needs confirmation" in item.reason and "safe" not in item.reason.replace("Not confirmed safe", "")
+
+
+def test_eggplant_is_not_egg(tmp_path):
+    from contracts.models import Product
+    wf = _wf(tmp_path)
+    p = Product(id="x", name="Baba Ganoush", source="StoreA", url="u", price=1, pack_size="8 oz",
+                ingredients=["Eggplant", "tahini"], arrive_by="2026-11-27")
+    ben = FakeTools().get_profile("g2")
+    assert wf._check(p, [ben]) == ([], [])
+    assert wf._check(p.model_copy(update={"ingredients": ["Eggs"]}), [ben])[0] == ["Eggs (Ben)"]
+
+
+class GarbageListLLM(FakeLLM):
+    def __init__(self):
+        self.calls = 0
+
+    def system2(self, prompt):
+        if "TASK: shopping" in prompt:
+            self.calls += 1
+            return "sure! here is your list: coffee"
+        return super().system2(prompt)
+
+
+def test_garbage_shopping_list_retried_once_then_falls_back(tmp_path):
+    llm = GarbageListLLM()
+    g = _wf(tmp_path, llm).start("Vi", "get me coffee", "1 Main St", ["g3"])
+    assert llm.calls == 2 and g.menu == ["get me coffee"] and g.status == "awaiting_plan_approval"
+
+
+def test_failed_restriction_expansion_marks_unknown(tmp_path):
+    class NoForbidden(FakeLLM):
+        def system2(self, prompt):
+            return "no" if "TASK: forbidden" in prompt else super().system2(prompt)
+
+    wf = _wf(tmp_path, NoForbidden())
+    g = wf.approve_plan(wf.start("Vi", "get me coffee", "1 Main St", ["g1"]).id)
+    assert g.cart.items[0].status == "unknown"
+    assert "could not check vegetarian (Asha)" in g.cart.items[0].alerts

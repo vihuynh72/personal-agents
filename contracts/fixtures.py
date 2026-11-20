@@ -34,6 +34,11 @@ CATALOG = [
     _p("a-soda6", "Sparkling Water", "StoreA", 3.98, "6-pack", ["carbonated water"]),
     _p("a-soda32", "Sparkling Water", "StoreA", 14.98, "32-pack", ["carbonated water"]),
     _p("b-bread", "Garlic Bread", "StoreB", 3.29, "10 oz", ["wheat flour", "butter", "garlic"]),
+    _p("a-coffee", "Ground Coffee Medium Roast", "StoreA", 7.99, "12 oz", ["arabica coffee"]),
+    _p("b-coffee", "Ground Coffee Dark Roast", "StoreB", 8.49, "12 oz", ["arabica coffee"]),
+    _p("a-hazelcoffee", "Hazelnut Flavored Ground Coffee", "StoreA", 6.49, "12 oz",
+       ["arabica coffee", "natural flavors", "peanut"]),  # may contain traces
+    _p("b-bulkcoffee", "Ground Coffee House Blend", "StoreB", 5.99, "12 oz", []),  # no ingredient list
 ]
 
 

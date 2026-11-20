@@ -23,9 +23,17 @@ class FakeLLM:
     """Deterministic stand-in; answers the prompts agent/workflow.py sends, keyed on their task tag."""
 
     def system1(self, prompt: str) -> str:
-        return json.dumps({"kind": "home_dinner", "when": "Saturday", "headcount": 6})
+        m = re.search(r"Request: (.+)", prompt)
+        req = m.group(1).lower() if m else ""
+        mode = "dinner" if re.search(r"dinner|party|lunch|brunch|night|guests", req) else "self"
+        return json.dumps({"mode": mode, "kind": "home_dinner", "when": "Saturday", "headcount": 6})
 
     def system2(self, prompt: str) -> str:
+        if "TASK: shopping" in prompt:
+            req = re.search(r"Request: (.+)", prompt).group(1).lower()
+            req = re.sub(r"\b(get me|order|buy|some|please|for myself|for me|i need|i want)\b", " ", req)
+            items = [x.strip(" .!") for x in re.split(r",| and ", req) if x.strip(" .!")]
+            return json.dumps(["ground coffee" if x == "coffee" else x for x in items])
         if "TASK: forbidden" in prompt:
             restriction = re.search(r"restriction: (.+)", prompt).group(1).strip().lower()
             return json.dumps(_FORBIDDEN.get(restriction, []))
@@ -39,9 +47,11 @@ class RealLLM:
         import anthropic
         from google import genai
 
-        self._claude = anthropic.Anthropic()
+        from google.genai import types
+
+        self._claude = anthropic.Anthropic(timeout=120, max_retries=1)  # bounded: no request hangs a run
         self._claude_model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
-        self._gemini = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        self._gemini = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(timeout=60_000))
         self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
     def system1(self, prompt: str) -> str:

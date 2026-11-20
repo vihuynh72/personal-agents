@@ -39,7 +39,9 @@ class CartItem(BaseModel):
     product: Product
     quantity: int = Field(default=1, ge=1)
     alternatives: list[Product] = []  # other pack sizes or sources the host can swap to
-    reason: str  # why it passed every guest's restrictions
+    reason: str  # why it passed every guest's restrictions, or why it needs confirmation
+    status: Literal["pass", "alert", "unknown"] = "pass"  # unknown: ingredients missing or not checkable
+    alerts: list[str] = []  # conflicting ingredient and person, or what could not be checked
 
 
 class Cart(BaseModel):
@@ -69,6 +71,7 @@ class Gathering(BaseModel):
     ship_to: str
     guest_ids: list[str]
     status: Status = "collecting"
+    mode: Literal["dinner", "self"] = "dinner"  # self: the buyer shops for themselves; no invites, no calendar
     when: datetime | None = None
     menu: list[str] = []
     cart: Cart | None = None
