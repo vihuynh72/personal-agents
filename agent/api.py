@@ -86,6 +86,10 @@ def create_app(workflow, chat=None, profiles=None) -> FastAPI:
             chat = Chat(workflow, profiles, get_llm())
         return {"reply": chat.handle(b.sender, b.text)}
 
+    @app.get("/outbox")  # iMessage bot pulls: {"messages": [{"sender", "text"}]}; returned messages are removed
+    def outbox():
+        return {"messages": workflow.outbox_pop()}
+
     @app.get("/profiles/{pid}")
     def get_profile(pid: str):
         if (p := profiles.get(pid)) is None:
@@ -128,5 +132,7 @@ def __getattr__(name):  # lazy `app` so importing this module (tests) needs neit
             llm, store = get_llm(), ProfileStore()
             wf = Workflow(tools, llm, senso=senso, profiles=store)
             _app = create_app(wf, Chat(wf, store, llm), store)
+            from agent.watcher import start
+            start(wf)  # notices Stripe payments by polling; no webhook
         return _app
     raise AttributeError(name)

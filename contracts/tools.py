@@ -20,6 +20,10 @@ class Tools(Protocol):
 
     def verify_checkout(self, cart: Cart) -> bool: ...  # F9
 
+    def is_paid(self, cart: Cart) -> bool:  # polled by agent/watcher.py; no webhook
+        """True once the cart's checkout has been paid."""
+        ...
+
     def place_order(self, cart: Cart, source: str) -> str:  # F13
         """Place the order with one retailer; return an order id."""
         ...
