@@ -1,10 +1,12 @@
-"""Text conversation over iMessage: onboarding, then "get me X" runs the whole buy-for-myself flow to a pay link.
+"""Text conversation over iMessage: at most one onboarding question, then "get me X" runs the whole
+buy-for-myself flow to a pay link. Questions about the cart are answered from the cart's own facts.
 
 Control flow is deterministic; the model (system1) only extracts profile facts and classifies a message.
 The only human gate is payment: chat fulfils only after Stripe itself reports the session paid.
 """
 import logging
 import os
+import re
 
 from contracts.models import GuestProfile
 
@@ -13,18 +15,30 @@ from .workflow import Workflow, _ask
 
 log = logging.getLogger(__name__)
 
-ONBOARD = ("Hi! I'm your shopping agent. In one message: what can't you have (allergies, diet), "
-           "and how do you like to shop (organic, favourite brands, cheapest, a budget)?")
+# the one question each new sender gets: greeting-only first text asks both things at once
+ONBOARD = ("Hi! I'm your shopping agent. One question: what should I get you, and is there anything you can't have "
+           "or prefer (organic, a brand, a budget)? Reply 'none' if nothing to avoid.")
+ASK_ONE = ("Got it. One question before I shop: anything you can't have, and any preference "
+           "(organic, a brand, a budget)? Reply 'none' if not.")
 
 _EXTRACT = ("TASK: profile. Extract shopping facts from this message. Reply with JSON only: "
             '{"name": "<first name or null>", "allergens": ["<lowercase singular food, e.g. peanut>"], '
             '"restrictions": ["<diet, e.g. vegetarian, halal>"], '
-            '"preferences": ["<short soft style keyword: organic, a brand name, cheapest, or a budget as under $N>"]}. '
+            '"preferences": ["<short soft style keyword: organic, a brand name, cheapest, or a budget as under $N>"], '
+            '"request": "<what they want bought now, in their words, or null>"}. '
             "Allergens and diets are safety facts; preferences are only style. Use [] when none.\nMessage: ")
 
 _INTENT = ("TASK: intent. Classify this text to a shopping agent. Reply with JSON only: "
-           '{"intent": "order" (they want something bought) or "update" (they are changing allergies, diet or '
-           'preferences) or "paid" (they say they paid) or "other"}.\nMessage: ')
+           '{"intent": "order" (they want something bought, including a vague meal request like "what\'s for dinner") '
+           'or "question" (they ask about the cart they were sent: safety, ingredients, price) '
+           'or "change" (they correct the cart they were sent: a different form, cheaper, organic instead) '
+           'or "update" (they are changing allergies, diet or preferences) '
+           'or "paid" (they say they paid) or "other"}.\nMessage: ')
+
+_ANSWER = ("TASK: answer. Rephrase these facts as a reply to the shopper's question in 1 to 3 short sentences. "
+           "Use only these facts and nothing else. Never say or imply the product is safe.\n")
+
+_NONE = re.compile(r"(none|no|nope|nothing|n/?a|no thanks)[.! ]*", re.I)
 
 
 def _strs(d: dict, k: str) -> list[str]:
@@ -41,19 +55,25 @@ class Chat:
     def __init__(self, workflow: Workflow, profiles: ProfileStore, llm):
         self.wf, self.store, self.llm = workflow, profiles, llm
 
+    def _intent(self, text: str) -> str | None:
+        return _ask(self.llm.system1, _INTENT + text, {})[0].get("intent")
+
     def handle(self, sender: str, text: str) -> str:
         step = "read your profile"
         try:
             profile = self.store.get(sender)
             if profile is None and not self.store.pending(sender):
+                step = "understand your message"
+                request = text.strip() if self._intent(text) == "order" else ""
                 self.store.set_pending(sender, True)
-                return ONBOARD
+                # shortcut: the remembered request lives in the pending marker file; ProfileStore has no field for it
+                self.store._path(sender, ".pending").write_text(request)
+                return ASK_ONE if request else ONBOARD
             if profile is None:
-                step = "save your profile"
+                step = "save your profile and build your cart"
                 return self._onboard(sender, text)
             step = "understand your message"
-            intent, _ = _ask(self.llm.system1, _INTENT + text, {})
-            intent = intent.get("intent")
+            intent = self._intent(text)
             if intent == "update":
                 step = "update your profile"
                 facts = self._extract(text)
@@ -64,18 +84,56 @@ class Chat:
             if intent == "paid":
                 step = "check your payment"
                 return self._paid(sender)
-            if intent != "order":
+            current = self._current(sender)
+            if intent == "question":
+                step = "answer your question"
+                return self._answer(current, profile, text) if current else \
+                    "I don't have a cart waiting for you. Tell me what to get (e.g. \"get me coffee\")."
+            if intent == "change" and current:
+                step = "change your cart"
+                self.wf.stop(current.id)  # the watcher stops waiting on the old cart
+                return self._order(sender, profile, f"{current.request}. Correction: {text}")
+            if intent not in ("order", "change"):
                 return "Tell me what to get (e.g. \"get me coffee\"), or tell me a new preference or allergy."
-            step = "plan your order"
-            g = self.wf.start(host=profile.name or sender, request=text, ship_to=os.environ.get("DEFAULT_SHIP_TO", "address on file"),  # shortcut: no address field on GuestProfile yet
-                              guest_ids=[sender])
-            self.wf.set_sender(g.id, sender)
             step = "build your cart"
-            g = self.wf.approve_plan(g.id)  # buy-for-myself: the plan gate is skipped by design; payment is the gate
-            return self._cart(g)
+            return self._order(sender, profile, text)
         except Exception:
             log.exception("chat step failed: %s", step)
             return f"Sorry, I couldn't {step}. Nothing was bought. Please try again in a moment."
+
+    def _order(self, sender: str, profile: GuestProfile, request: str) -> str:
+        g = self.wf.start(host=profile.name or sender, request=request,
+                          ship_to=os.environ.get("DEFAULT_SHIP_TO", "address on file"),  # shortcut: no address field on GuestProfile yet
+                          guest_ids=[sender], mode="self")
+        self.wf.set_sender(g.id, sender)
+        g = self.wf.approve_plan(g.id)  # buy-for-myself: the plan gate is skipped by design; payment is the gate
+        return self._cart(g)
+
+    def _current(self, sender: str):
+        waiting = [i for i in self.wf.gatherings_of(sender) if self.wf.get(i).status == "awaiting_payment"]
+        return self.wf.get(waiting[-1]) if waiting else None
+
+    def _answer(self, g, profile: GuestProfile, question: str) -> str:
+        """Deterministic facts from the cart; the model may only rephrase them, and never into a safety assurance."""
+        avoid = ", ".join(profile.allergens + profile.restrictions)
+        parts = []
+        for i in g.cart.items[:3]:
+            p, ings = i.product, ", ".join(i.product.ingredients)
+            s = f"{p.name} ({p.pack_size or 'size n/a'}, ${p.price:.2f} from {p.source})"
+            if i.status == "pass":
+                s += f": the store lists {ings}, and none of that matches what you avoid ({avoid or 'nothing given'})."
+            else:
+                s += f" needs confirmation: {'; '.join(i.alerts) or 'not every check passed'}."
+            if i.status == "pass" and ". " in i.reason:
+                s += " " + i.reason.split(". ", 1)[1]  # the ranking part: preference, unit price, options compared
+            parts.append(s)
+        facts = " ".join(parts) + (" The store's ingredient list does not cover cross-contamination, \"may contain\" "
+                                   "warnings or the factory, so I can't confirm those; please check the package.")
+        try:
+            out = (self.llm.system2(f"{_ANSWER}Facts: {facts}\nQuestion: {question}") or "").strip()
+        except Exception:
+            out = ""
+        return facts if not out or re.search(r"\bsafe", out, re.I) else out
 
     def _paid(self, sender: str) -> str:
         """Stripe is the only proof of payment; the text just triggers an immediate check."""
@@ -92,18 +150,23 @@ class Chat:
         facts, ok = _ask(self.llm.system1, _EXTRACT + text, {})
         out = {k: _strs(facts, k) for k in ("allergens", "restrictions", "preferences")}
         out["name"] = facts.get("name") if isinstance(facts.get("name"), str) else None
+        out["request"] = facts.get("request") if isinstance(facts.get("request"), str) and facts["request"].strip() else None
         if not ok:
             out["preferences"] = [text.strip()]  # model unusable after one retry: keep their words as one preference
         return out
 
     def _onboard(self, sender: str, text: str) -> str:
-        facts = self._extract(text)
-        if not (facts["name"] or facts["allergens"] or facts["restrictions"] or facts["preferences"]):
-            return "I didn't catch anything there. " + ONBOARD.split("! ", 1)[1]
+        """The answer to the one question: save the profile, then shop at once if a request is known. Never re-asks."""
+        remembered = self.store._path(sender, ".pending").read_text().strip()
+        facts = {"name": None, "allergens": [], "restrictions": [], "preferences": [], "request": None} \
+            if _NONE.fullmatch(text.strip()) else self._extract(text)
         profile = self.store.save(GuestProfile(id=sender, name=facts["name"] or sender, allergens=facts["allergens"],
                                                restrictions=facts["restrictions"], preferences=facts["preferences"]))
         self.store.set_pending(sender, False)
-        return f"Saved. {self._summary(profile)} What should I get you?"
+        request = remembered or facts["request"]
+        if not request:
+            return f"Saved. {self._summary(profile)} Text me what you need any time."
+        return f"Saved. {self._summary(profile)}\n{self._order(sender, profile, request)}"
 
     @staticmethod
     def _summary(p: GuestProfile) -> str:

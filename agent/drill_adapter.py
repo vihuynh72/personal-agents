@@ -1,20 +1,22 @@
-"""Firedrill http.v1 adapter: message in, plain-text cart summary out. Drill only; agent/api.py is untouched.
+"""Firedrill http.v1 adapter: each message goes through the real conversation (agent.chat.Chat). Drill only;
+agent/api.py is untouched.
 
 Run: PORT=8010 python -m agent.drill_adapter     (or: uvicorn agent.drill_adapter:app --port 8010)
 Never calls mark_paid: payment needs the human.
 """
+import hashlib
 import os
 import tempfile
+import uuid
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-GUEST = "g3"  # Chen, peanut allergen
 SHIP_TO = "100 Drill St, San Francisco, CA 94105"  # synthetic address
+_BOOT = uuid.uuid4().hex  # a fresh shopper per process start, so a rerun never meets an old profile
 
 app = FastAPI(title="Firedrill adapter")
-_wf = None
-_replies: dict[str, str] = {}  # session key -> summary; shortcut: one cart per drill session, later turns repeat it
+_chat = None
 
 
 class Chat(BaseModel):
@@ -22,40 +24,37 @@ class Chat(BaseModel):
     session: str = "default"
 
 
-def _workflow():
-    global _wf
-    if _wf is None:  # same wiring as agent.api's lazy app, with a throwaway data dir
+def _agent():
+    global _chat
+    if _chat is None:  # same wiring as agent.api's lazy app, with a throwaway data dir
+        from agent.chat import Chat as AgentChat
         from agent.llm import get_llm
+        from agent.profiles import ProfileStore
         from agent.workflow import Workflow
         from contracts.fixtures import FakeTools
 
+        d = tempfile.mkdtemp(prefix="drill-")
         if os.environ.get("STRIPE_SECRET_KEY") and os.environ.get("BRIGHTDATA_API_KEY"):
             from agent.products import BrightDataTools
-            tools = BrightDataTools()
+            tools = BrightDataTools(d)
         elif os.environ.get("STRIPE_SECRET_KEY"):
             from agent.payments import StripeTools
-            tools = StripeTools()
+            tools = StripeTools(d)
         else:
             tools = FakeTools()
         senso = None
         if os.environ.get("SENSO_API_KEY"):
             from agent.senso import Senso
             senso = Senso()
-        _wf = Workflow(tools, get_llm(), data_dir=tempfile.mkdtemp(prefix="drill-"), senso=senso)
-    return _wf
+        os.environ.setdefault("DEFAULT_SHIP_TO", SHIP_TO)
+        store, llm = ProfileStore(d), get_llm()
+        _chat = AgentChat(Workflow(tools, llm, data_dir=d, senso=senso, profiles=store), store, llm)
+    return _chat
 
 
-def _summary(g) -> str:
-    lines = [f"Cart for your request ({len(g.cart.items)} item(s)):"]
-    for i in g.cart.items:
-        p = i.product
-        lines.append(f"- {p.name} ({p.pack_size}) from {p.source}, ${p.price:.2f} x{i.quantity}. "
-                     f"Status: {i.status}. Ingredients: {', '.join(p.ingredients) or 'not listed'}. "
-                     f"Reason: {i.reason}" + (f" Alerts: {'; '.join(i.alerts)}." if i.alerts else ""))
-    lines.append(f"Total: ${g.cart.total:.2f}.")
-    lines.append("Checkout is a Stripe test-mode link and nothing has been paid. "
-                 f"It is waiting for your approval: {g.checkout_url}")
-    return "\n".join(lines)
+def _sender(session: str) -> str:
+    """One shopper per drill session (and per process start); the id fits ProfileStore's safe-id rule."""
+    return "drill-" + hashlib.sha256(f"{_BOOT}:{session}".encode()).hexdigest()[:16]
 
 
 @app.get("/health")
@@ -65,16 +64,11 @@ def health():
 
 @app.post("/chat")
 def chat(b: Chat):
-    if b.session not in _replies:
-        try:
-            wf = _workflow()
-            g = wf.start("drill-shopper", b.message, SHIP_TO, [GUEST])
-            g = wf.approve_plan(g.id)  # shopping plan approved by the simulated user's message; payment is not
-            _replies[b.session] = _summary(g)
-        except Exception as e:  # e.g. an empty cart cannot be checked out; report it as the agent's honest reply, not a 500
-            _replies[b.session] = (f"I could not build a safe cart for you ({type(e).__name__}: {str(e)[:200]}). "
-                                   "Nothing was added to a checkout and nothing was bought or paid.")
-    return {"reply": _replies[b.session]}
+    try:
+        return {"reply": _agent().handle(_sender(b.session), b.message)}
+    except Exception as e:  # report it as the agent's honest reply, not a 500
+        return {"reply": (f"Something went wrong on my side ({type(e).__name__}: {str(e)[:200]}). "
+                          "Nothing was added to a checkout and nothing was bought or paid.")}
 
 
 if __name__ == "__main__":

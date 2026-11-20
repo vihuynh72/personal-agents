@@ -220,14 +220,86 @@ def test_unit_price_beats_sticker_price(tmp_path):
     assert f6.inputs["price_basis"] == "unit price per oz"
 
 
-def test_unparsable_pack_size_falls_back_to_sticker(tmp_path):
+def test_unparsable_pack_size_ranks_after_known_unit_price(tmp_path):
     item, f6 = _shop_one(tmp_path, [_prod("big", "Folgers Classic Roast", 12.96, "25.9 oz"),
-                                    _prod("bag", "Store Coffee", 6.00, "")])
-    assert item.product.id == "bag" and "sticker price" in item.reason
-    assert f6.inputs["price_basis"].startswith("sticker price") and "bag" in f6.inputs["price_basis"]
+                                    _prod("packet", "Coffee Single Packet", 1.53, "")])
+    assert item.product.id == "big" and "$0.50/oz" in item.reason and [a.id for a in item.alternatives] == ["packet"]
+    assert f6.inputs["price_basis"].startswith("unit price per oz") and "packet" in f6.inputs["price_basis"]
+    item, f6 = _shop_one(tmp_path / "2", [_prod("bag", "Store Coffee", 6.00, ""), _prod("jar", "Jar Coffee", 9.0, "a jar")])
+    assert item.product.id == "bag" and "sticker price" in item.reason  # none parse: sticker price
+    assert f6.inputs["price_basis"].startswith("sticker price")
 
 
 def test_pack_size_parsing():
     from agent.workflow import _size
     assert _size("1.063 lb") == (1.063 * 16, "oz") and _size("12 fl oz") == (12, "fl oz")
     assert _size("6-pack") == (6, "count") and _size("25.9oz") == (25.9, "oz") and _size("1 bag") is None
+
+
+def test_named_form_filters_contradicting_products(tmp_path):
+    item, f6 = _shop_one(tmp_path, [_prod("inst", "Instant Coffee Single Serve", 1.53, "0.1 oz"),
+                                    _prod("pods", "Coffee K-Cup Pods", 3.00, "12 count"),
+                                    _prod("ground", "Ground Coffee", 8.00, "12 oz")])
+    assert item.product.id == "ground" and item.alternatives == [] and set(f6.inputs["wrong_form"]) == {"inst", "pods"}
+    item, f6 = _shop_one(tmp_path / "2", [_prod("inst", "Instant Coffee", 1.53, "0.1 oz")])
+    assert item.product.id == "inst" and f6.inputs["wrong_form"] == []  # nothing else: keep it
+
+
+def test_shopping_prompt_asks_for_everyday_form(tmp_path):
+    seen = []
+
+    class Spy(FakeLLM):
+        def system2(self, prompt):
+            seen.append(prompt)
+            return super().system2(prompt)
+
+    _wf(tmp_path, Spy()).start("Vi", "get me coffee", "1 Main St", ["g3"])
+    assert any("most common everyday form" in p and "Shopper:" in p for p in seen)
+
+
+def test_unknown_reason_never_claims_a_check(tmp_path, monkeypatch):
+    from contracts import fixtures
+    monkeypatch.setattr(fixtures, "CATALOG", [p for p in fixtures.CATALOG if p.id not in ("a-coffee", "b-coffee")])
+    item = _wf(tmp_path).approve_plan(_wf(tmp_path).start("Vi", "get me coffee", "1 Main St", ["g3"]).id).cart.items[0]
+    assert item.status == "unknown" and item.reason.startswith("Needs confirmation:") and "No peanut" not in item.reason
+
+
+class FakeSenso:
+    def __init__(self, hits, verdict="verified"):
+        self.hits, self.verdict = hits, verdict
+
+    def search(self, q):
+        return self.hits
+
+    def check(self, text, question):
+        return {"id": "r1", "status": "done",
+                "claims": [{"claim_text": "Ground Coffee Medium Roast is listed", "verdict": self.verdict}]}
+
+
+@pytest.mark.parametrize("senso", [FakeSenso([]), FakeSenso([{"chunk_text": "x"}], "unsupported")])
+def test_senso_downgrade_rewrites_reason(tmp_path, senso):
+    wf = Workflow(FakeTools(), FakeLLM(), str(tmp_path), senso=senso)
+    item = wf.approve_plan(wf.start("Vi", "get me coffee", "1 Main St", ["g3"]).id).cart.items[0]
+    assert item.status == "unknown" and item.reason.startswith("Needs confirmation:")
+    assert "No peanut" not in item.reason and "Senso" in item.reason
+
+
+def test_walmart_cart_link_in_receipt(tmp_path):
+    from agent.workflow import walmart_cart_link
+    from contracts.models import CartItem
+
+    class Catalog(FakeTools):
+        def search_products(self, query, ship_to):
+            return [_prod("walmart-578550306", "Ground Coffee", 7.0, "12 oz", source="Walmart")]
+
+    wf = Workflow(Catalog(), FakeLLM(), str(tmp_path))
+    g = wf.approve_plan(wf.start("Vi", "get me coffee", "1 Main St", ["g3"]).id)
+    g = wf.update_cart(g.id, [{"product_id": "walmart-578550306", "quantity": 2}])
+    wf.mark_paid(g.id)
+    r = wf.receipt(g.id)
+    assert "Your Walmart cart, ready to check out: https://affil.walmart.com/cart/addToCart?items=578550306|2" in r
+    assert len(r) <= 900 and r.splitlines()[-1].startswith("Note:")
+    other = CartItem(product=_prod("target-1", "X", 1, "1 oz", source="Target"), reason="r")
+    assert walmart_cart_link([other]) is None
+    plain = _wf(tmp_path / "2")
+    assert "Walmart cart" not in plain.receipt(plain.mark_paid(_to_payment(plain).id).id)

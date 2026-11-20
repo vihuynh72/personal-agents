@@ -28,6 +28,9 @@ class FakeLLM:
             msg = raw.lower()
             if "TASK: intent" in prompt:
                 intent = ("paid" if re.search(r"\bpaid\b", msg) else
+                          "order" if re.search(r"\b(dinner|lunch|breakfast)\b", msg) else
+                          "question" if "?" in msg else
+                          "change" if re.search(r"\b(instead|cheaper|wanted|rather|make it)\b", msg) else
                           "update" if re.search(r"\b(prefer|actually|instead|allergic|no longer|stop buying)\b", msg) else
                           "order" if re.search(r"\b(get|buy|order|need|want)\b", msg) else "other")
                 return json.dumps({"intent": intent})
@@ -38,7 +41,9 @@ class FakeLLM:
                 "name": name.group(1) if name else None,
                 "allergens": [a for a in ("peanut", "egg", "milk", "soy", "sesame", "shellfish") if re.search(rf"\b{a}s?\b", msg)],
                 "restrictions": [r for r in _FORBIDDEN if re.search(rf"\b{r}\b", msg)],
-                "preferences": prefs})
+                "preferences": prefs,
+                "request": (m.group(0).strip(" .!") if (m := re.search(r"\b(?:get|buy|order|need|want)\b.*", raw, re.I))
+                            else None)})
         m = re.search(r"Request: (.+)", prompt)
         req = m.group(1).lower() if m else ""
         mode = "dinner" if re.search(r"dinner|party|lunch|brunch|night|guests", req) else "self"
@@ -47,9 +52,16 @@ class FakeLLM:
     def system2(self, prompt: str) -> str:
         if "TASK: shopping" in prompt:
             req = re.search(r"Request: (.+)", prompt).group(1).lower()
+            if fix := re.search(r"^(.*?)\.? correction: (.+)$", req):  # chat "change": re-plan the original, then apply it
+                base = json.loads(self.system2(f"TASK: shopping\nRequest: {fix.group(1)}"))
+                return json.dumps([f"organic {x}" if "organic" in fix.group(2) else x for x in base])
+            if re.search(r"\b(dinner|lunch|meal)\b", req):
+                return json.dumps(["spaghetti", "marinara sauce", "salad"])
             req = re.sub(r"\b(get me|order|buy|some|please|for myself|for me|i need|i want)\b", " ", req)
             items = [x.strip(" .!") for x in re.split(r",| and ", req) if x.strip(" .!")]
             return json.dumps(["ground coffee" if x == "coffee" else x for x in items])
+        if "TASK: answer" in prompt:
+            return re.search(r"Facts: (.+)", prompt).group(1)
         if "TASK: forbidden" in prompt:
             restriction = re.search(r"restriction: (.+)", prompt).group(1).strip().lower()
             return json.dumps(_FORBIDDEN.get(restriction, []))

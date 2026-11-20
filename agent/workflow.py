@@ -83,15 +83,37 @@ def _hits(p: Product, style: list[str]) -> list[str]:
 
 
 def _rank(products: list[Product], style: list[str], budget: float | None) -> tuple[list[Product], dict]:
-    """Within one safety tier: in budget, then most preference hits, then unit price, then sticker price."""
+    """Within one safety tier: in budget, then most preference hits, then unit price (unparsed sizes after), then sticker."""
     sizes = {p.id: _size(p.pack_size) for p in products}
-    kinds = {s[1] if s else None for s in sizes.values()}
-    per_unit = len(kinds) == 1 and None not in kinds  # unit prices only compare within one unit
-    unit = lambda p: p.price / sizes[p.id][0] if per_unit else p.price
+    kinds = {s[1] for s in sizes.values() if s}
+    per_unit = len(kinds) == 1  # unit prices only compare within one unit; unparsed sizes rank after known ones
+    has = lambda p: per_unit and sizes[p.id] is not None
+    unit = lambda p: p.price / sizes[p.id][0] if has(p) else p.price
     over = lambda p: budget is not None and p.price > budget
-    ranked = sorted(products, key=lambda p: (over(p), -len(_hits(p, style)), unit(p), p.price))
-    return ranked, {"per_unit": per_unit, "unit": kinds.pop() if per_unit else None, "price": unit,
+    ranked = sorted(products, key=lambda p: (over(p), -len(_hits(p, style)), per_unit and not has(p), unit(p), p.price))
+    return ranked, {"per_unit": per_unit, "unit": kinds.pop() if per_unit else None, "price": unit, "has_unit": has,
                     "unparsed": [p.id for p in products if sizes[p.id] is None]}
+
+
+# a form the shopper (or the shopping list) names -> product-name words that contradict it
+_FORMS = {"ground": r"\b(instant|pods?|k-?cups?|single[- ]serve)\b",
+          "whole bean": r"\b(ground|instant|pods?|k-?cups?|single[- ]serve)\b"}
+
+
+def _wrong_form(item: str, p: Product) -> bool:
+    return any(re.search(rf"\b{f}\b", item, re.I) and re.search(bad, p.name, re.I) for f, bad in _FORMS.items())
+
+
+def _who(p: GuestProfile) -> str:
+    """Display name in reasons; a chat profile saved without a name (name == phone id) reads as "you"."""
+    return p.name if p.name and p.name != p.id else "you"
+
+
+def walmart_cart_link(items: list[CartItem]) -> str | None:
+    """Walmart's official add-to-cart link for the Walmart items (product ids look like walmart-578550306)."""
+    ids = [f"{i.product.id.split('-', 1)[1]}|{i.quantity}" for i in items
+           if i.product.id.lower().startswith("walmart-") and i.product.id.split("-", 1)[1].isdigit()]
+    return "https://affil.walmart.com/cart/addToCart?items=" + ",".join(ids) if ids else None
 
 
 class Workflow:
@@ -191,6 +213,8 @@ class Workflow:
                   f"Estimated arrival {arrive.isoformat()}.",
                   "Note: the retailer orders and the virtual card are simulated in this demo; "
                   "the Stripe payment was a test-mode payment."]
+        if link := walmart_cart_link(g.cart.items):
+            lines.insert(-1, f"Your Walmart cart, ready to check out: {link}")
         text = "\n".join(lines)
         if len(text) > 900:  # keep the closing line; trim items
             tail = "\n".join(lines[-4:])
@@ -203,7 +227,8 @@ class Workflow:
     def audit(self, gathering_id: str) -> list[AuditEvent]:
         return self._load(gathering_id)[1]
 
-    def start(self, host: str, request: str, ship_to: str, guest_ids: list[str]) -> Gathering:
+    def start(self, host: str, request: str, ship_to: str, guest_ids: list[str], mode: str | None = None) -> Gathering:
+        """mode="self" forces buy-for-myself (chat); None lets F1 decide."""
         g = Gathering(id=uuid.uuid4().hex[:12], host=host, request=request, ship_to=ship_to, guest_ids=guest_ids)
         audit: list[AuditEvent] = []
 
@@ -213,7 +238,7 @@ class Workflow:
             '{"mode": "self" (buy things for myself) or "dinner" (plan a meal for a group), '
             '"kind": "home_dinner" or "restaurant", "when": "<rough time words>", "headcount": <int>}.\n'
             f"Request: {request}", {})
-        if len(guest_ids) == 1 and intake.get("mode") != "dinner":
+        if mode == "self" or (len(guest_ids) == 1 and intake.get("mode") != "dinner"):
             g.mode = "self"
         self._log(audit, g, "F1", {"request": request}, [f"host:{host}"],
                   f"Mode {g.mode}. Parsed as {intake.get('kind')} around {intake.get('when')} "
@@ -241,9 +266,11 @@ class Workflow:
                  for p in profiles]
         if g.mode == "self":
             prompt = ("TASK: shopping. Turn this request into a short shopping list of grocery search terms "
-                      "(e.g. \"get me coffee\" -> [\"ground coffee\"]). Include only what the person asked for; "
-                      "never add other items. Reply with a JSON array of strings only.\n"
-                      f"Request: {request}")
+                      "(e.g. \"get me coffee\" -> [\"ground coffee\"]). Use the most common everyday form of a "
+                      "product unless the shopper names one. Include only what the person asked for; never add "
+                      "other items. If the request is only a vague meal (e.g. \"what's for dinner\"), propose one "
+                      "simple meal of 2 to 4 grocery items the shopper can eat. Reply with a JSON array of strings only.\n"
+                      f"Shopper: {json.dumps(facts)}\nRequest: {request}")
         else:
             prompt = ("TASK: menu. Plan a home dinner menu that every guest can eat. Each item must be a short grocery "
                       "search term (e.g. \"spaghetti\", \"marinara sauce\"). Reply with a JSON array of strings only.\n"
@@ -301,10 +328,10 @@ class Workflow:
             for r in guest.restrictions:
                 f = self._forbidden_for(r)
                 if f is None:
-                    notes.append(f"could not check {r} ({guest.name})")
+                    notes.append(f"could not check {r} ({_who(guest)})")
                 else:
                     banned += f
-            bad += [f"{i} ({guest.name})" for i in product.ingredients for b in banned if b and _matches(b, i)]
+            bad += [f"{i} ({_who(guest)})" for i in product.ingredients for b in banned if b and _matches(b, i)]
         return bad, notes
 
     def _forbidden_for(self, restriction: str) -> list[str] | None:
@@ -319,8 +346,8 @@ class Workflow:
 
     @staticmethod
     def _checks(profiles: list[GuestProfile]) -> str:
-        c = ", ".join([f"no {a} ({p.name})" for p in profiles for a in p.allergens] +
-                      [f"{r} ({p.name})" for p in profiles for r in p.restrictions])
+        c = ", ".join([f"no {a} ({_who(p)})" for p in profiles for a in p.allergens] +
+                      [f"{r} ({_who(p)})" for p in profiles for r in p.restrictions])
         return c[:1].upper() + c[1:] if c else "No restrictions to check"
 
     @staticmethod
@@ -330,6 +357,11 @@ class Workflow:
     def _shop(self, g: Gathering, audit: list[AuditEvent], item: str, profiles: list[GuestProfile]):
         # F6: deterministic check of every ingredient against every guest; the LLM only expands restriction names.
         found = self.tools.search_products(item, g.ship_to)
+        wrong = [p.id for p in found if _wrong_form(item, p)]
+        if len(wrong) < len(found):  # drop products that contradict the named form, unless nothing else is left
+            found = [p for p in found if p.id not in wrong]
+        else:
+            wrong = []
         passing, unknown, rejected, notes = [], [], {}, {}
         for p in found:
             bad, notes[p.id] = self._check(p, profiles)
@@ -343,7 +375,7 @@ class Workflow:
         prefs = profiles[0].preferences if profiles else []  # the buyer's (first guest's) style only
         style = _style(prefs)
         budget = min((float(m.group(1)) for p in prefs if (m := _BUDGET.search(p))), default=None)
-        inputs = {"menu_item": item, "rejected": rejected, "unknown": [p.id for p in unknown],
+        inputs = {"menu_item": item, "rejected": rejected, "wrong_form": wrong, "unknown": [p.id for p in unknown],
                   "rule": "ranked by safety, then stated preferences, then unit price; passing first, then unknown; "
                           "a budget only drops passing options when one within it remains; no sponsored placement",
                   "preferences": prefs, "style_used": style, "budget": budget}
@@ -354,7 +386,9 @@ class Workflow:
         passing, basis = _rank(passing, style, budget)
         unknown, _ = _rank(unknown, style, None)
         ranked = passing + unknown
-        inputs["price_basis"] = (f"unit price per {basis['unit']}" if basis["per_unit"] else
+        inputs["price_basis"] = (f"unit price per {basis['unit']}"
+                                 + (f"; unparsed pack sizes ranked after: {basis['unparsed']}" if basis["unparsed"] else "")
+                                 if basis["per_unit"] else
                                  f"sticker price: pack sizes not comparable (unparsed: {basis['unparsed']})")
         best = ranked[0]
         senso_note, no_context = "", False
@@ -374,7 +408,7 @@ class Workflow:
                     f"Within budget ${budget:g}." if budget is not None else "No stated preferences.")
             if budget is not None and best.price > budget:
                 pref += f" Nothing passing was under ${budget:g}."
-            price = (f"${basis['price'](best):.2f}/{basis['unit']}" if basis["per_unit"]
+            price = (f"${basis['price'](best):.2f}/{basis['unit']}" if basis["has_unit"](best)
                      else f"${best.price:.2f} (sticker price, pack sizes not comparable)")
             reason = self._checks(profiles) + \
                      f". {pref} {price}, best of {len(passing)} passing options from {sources} source{'s' * (sources > 1)}."
@@ -385,7 +419,7 @@ class Workflow:
         if no_context:  # Senso answered but had nothing: never call it safe
             alert = "Senso context could not confirm this product"
             status, alerts = "unknown", alerts + [alert]
-            reason += f" {alert}; not confirmed safe."
+            reason = self._unknown_reason(alerts)  # never keep a "No peanut (...)" pass reason on an unknown item
         self._log(audit, g, "F6", inputs, context,
                   f"Chose {best.name} ({best.pack_size}) from {best.source} at ${best.price} [{status}]. {reason}{senso_note}")
         return CartItem(product=best, alternatives=ranked[1:], reason=reason, status=status, alerts=alerts)
@@ -433,6 +467,7 @@ class Workflow:
         for i in unsupported:
             i.status = "unknown"
             i.alerts = i.alerts + ["Senso could not support a claim about this product"]
+            i.reason = self._unknown_reason(i.alerts)
         g.cart.items = [i for i in items if i not in conflicts]
         tally = ", ".join(f"{n} {v}" for v in ("verified", "conflict", "unsupported", "not_verifiable")
                           if (n := sum(c.get("verdict") == v for c in res.get("claims", []))))
