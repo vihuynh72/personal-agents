@@ -1,7 +1,7 @@
 """Text conversation over iMessage: onboarding, then "get me X" runs the whole buy-for-myself flow to a pay link.
 
 Control flow is deterministic; the model (system1) only extracts profile facts and classifies a message.
-The only human gate is payment: chat never calls mark_paid.
+The only human gate is payment: chat fulfils only after Stripe itself reports the session paid.
 """
 import logging
 import os
@@ -62,18 +62,31 @@ class Chat:
                 self.store.save(profile)
                 return f"Updated. {self._summary(profile)}"
             if intent == "paid":
-                return "Thanks. Payment is confirmed by Stripe on your review page, not by text, so nothing changes here."
+                step = "check your payment"
+                return self._paid(sender)
             if intent != "order":
                 return "Tell me what to get (e.g. \"get me coffee\"), or tell me a new preference or allergy."
             step = "plan your order"
             g = self.wf.start(host=profile.name or sender, request=text, ship_to=os.environ.get("DEFAULT_SHIP_TO", "address on file"),  # shortcut: no address field on GuestProfile yet
                               guest_ids=[sender])
+            self.wf.set_sender(g.id, sender)
             step = "build your cart"
             g = self.wf.approve_plan(g.id)  # buy-for-myself: the plan gate is skipped by design; payment is the gate
             return self._cart(g)
         except Exception:
             log.exception("chat step failed: %s", step)
             return f"Sorry, I couldn't {step}. Nothing was bought. Please try again in a moment."
+
+    def _paid(self, sender: str) -> str:
+        """Stripe is the only proof of payment; the text just triggers an immediate check."""
+        gids = self.wf.gatherings_of(sender)
+        waiting = [i for i in gids if self.wf.get(i).status == "awaiting_payment"]
+        if waiting:
+            # notify=False: the receipt goes back as this reply, not also through the outbox
+            return self.wf.receipt(waiting[-1]) if self.wf.check_paid(waiting[-1], notify=False) else \
+                "I don't see the payment yet."
+        done = [i for i in gids if self.wf.get(i).status == "done"]
+        return self.wf.receipt(done[-1]) if done else "I don't see the payment yet."
 
     def _extract(self, text: str) -> dict:
         facts, ok = _ask(self.llm.system1, _EXTRACT + text, {})

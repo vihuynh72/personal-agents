@@ -61,5 +61,10 @@ class FakeTools:
     def verify_checkout(self, cart: Cart) -> bool:
         return True
 
+    paid = False  # tests flip this to simulate the shopper paying
+
+    def is_paid(self, cart: Cart) -> bool:
+        return self.paid
+
     def place_order(self, cart: Cart, source: str) -> str:
         return f"sim-{source}-{cart.gathering_id}"

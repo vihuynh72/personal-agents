@@ -1,6 +1,7 @@
 """Master agent: runs the F1..F13 graph from docs/agent-graph.md, persists state, writes the audit trail (F10)."""
 import json
 import re
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -100,6 +101,7 @@ class Workflow:
         self.dir.mkdir(parents=True, exist_ok=True)
         self.profiles = profiles or ProfileStore(data_dir)
         self._forbidden: dict[str, list[str] | None] = {}  # None: expansion failed, products become unknown
+        self._lock = threading.RLock()  # mark_paid's check-and-set, and the small JSON files below
 
     def _profile(self, person_id: str) -> GuestProfile:
         """Saved profile first, then the tools (fixtures)."""
@@ -138,7 +140,62 @@ class Workflow:
             raise ValueError(f"gathering {gid} is {g.status}, expected {' or '.join(allowed)}")
         return g, audit
 
+    def _update(self, name: str, default, fn):
+        """Read-modify-write one small JSON file in the data dir under the lock; returns fn's result."""
+        with self._lock:
+            p = self.dir / "notify" / name  # subdir: the data dir root holds only gathering files
+            p.parent.mkdir(exist_ok=True)
+            d = json.loads(p.read_text()) if p.exists() else default
+            out = fn(d)
+            tmp = p.with_suffix(".tmp")
+            tmp.write_text(json.dumps(d))
+            tmp.replace(p)
+            return out
+
     # ---- public API ----
+
+    def ids(self, status: str) -> list[str]:
+        return [p.stem for p in self.dir.glob("*.json")
+                if re.fullmatch(r"[0-9a-f]{12}", p.stem) and self.get(p.stem).status == status]
+
+    def set_sender(self, gathering_id: str, sender: str) -> None:
+        """Chat records who ordered, so the receipt can be texted back."""
+        self._update("senders.json", {}, lambda d: d.__setitem__(gathering_id, sender))
+
+    def sender(self, gathering_id: str) -> str | None:
+        return self._update("senders.json", {}, lambda d: d.get(gathering_id))
+
+    def gatherings_of(self, sender: str) -> list[str]:
+        """Oldest first."""
+        return self._update("senders.json", {}, lambda d: [g for g, s in d.items() if s == sender])
+
+    def outbox_pop(self) -> list[dict]:
+        """Every queued text, removed from the queue (the iMessage bot pulls GET /outbox)."""
+        return self._update("outbox.json", [], lambda d: [d.pop(0) for _ in range(len(d))])
+
+    def check_paid(self, gathering_id: str, notify: bool = True) -> Gathering | None:
+        """Ask the payment tool; if paid, run fulfilment. None while unpaid."""
+        g = self.get(gathering_id)
+        if g.status != "awaiting_payment" or not g.cart or not self.tools.is_paid(g.cart):
+            return None
+        return self.mark_paid(gathering_id, notify)
+
+    def receipt(self, gathering_id: str) -> str:
+        g, audit = self._load(gathering_id)
+        orders = [f"{e.inputs['source']} order {e.inputs.get('order_id')}" for e in audit
+                  if e.node_id == "F13" and "source" in e.inputs]
+        arrive = max(i.product.arrive_by for i in g.cart.items)
+        lines = ["Paid. Order placed."]
+        lines += [f"- {i.product.name} x{i.quantity}, ${i.product.price * i.quantity:.2f}" for i in g.cart.items]
+        lines += [f"Retailers: {'; '.join(orders)}.", f"Total ${g.cart.total:.2f}. Ships to {g.ship_to}.",
+                  f"Estimated arrival {arrive.isoformat()}.",
+                  "Note: the retailer orders and the virtual card are simulated in this demo; "
+                  "the Stripe payment was a test-mode payment."]
+        text = "\n".join(lines)
+        if len(text) > 900:  # keep the closing line; trim items
+            tail = "\n".join(lines[-4:])
+            text = "\n".join(lines[:-4])[:896 - len(tail)] + "...\n" + tail
+        return text
 
     def get(self, gathering_id: str) -> Gathering:
         return self._load(gathering_id)[0]
@@ -421,18 +478,28 @@ class Workflow:
         self._save(g, audit)
         return g
 
-    def mark_paid(self, gathering_id: str) -> Gathering:
-        g, audit = self._open(gathering_id, "awaiting_payment")
-        g.status = "fulfilling"
-        self._save(g, audit)
+    def mark_paid(self, gathering_id: str, notify: bool = True) -> Gathering:
+        with self._lock:  # the watcher and a "paid" text can race; only one gets past the status check
+            g, audit = self._open(gathering_id, "awaiting_payment")
+            g.status = "fulfilling"
+            self._save(g, audit)
 
-        # F13 fanout: one simulated retailer order per source
+        # F13 virtual card: shortcut: mocked, Stripe Issuing is not enabled on this account
+        last4 = f"{int(g.id, 16) % 10000:04d}"
+        total = g.cart.total
+        self._log(audit, g, "F13.card", {"card_last4": last4, "spending_limit": total, "single_use": True},
+                  [f"cart_total:{total}"],
+                  f"Created a single-use virtual card ending {last4} limited to ${total:.2f} "
+                  "(simulated; Stripe Issuing is not enabled on this account).", simulated=True)
+
+        # F13 fanout: one simulated retailer order per source, paid with that card
         sources = sorted({i.product.source for i in g.cart.items})
         orders = _run_all([lambda s=s: self.tools.place_order(g.cart, s) for s in sources])
         for s, oid in zip(sources, orders):
-            self._log(audit, g, "F13", {"source": s},
+            self._log(audit, g, "F13", {"source": s, "order_id": oid, "card_last4": last4, "ship_to": g.ship_to},
                       [f"product:{i.product.id}" for i in g.cart.items if i.product.source == s],
-                      f"Placed order {oid} with {s}.", simulated=True)
+                      f"Placed order {oid} with {s}, paid with virtual card ending {last4}, "
+                      f"shipping to {g.ship_to} (simulated).", simulated=True)
 
         ok = self.tools.verify_checkout(g.cart)  # F9
         self._log(audit, g, "F9", {"checkout_url": g.checkout_url}, [f"cart_total:{g.cart.total}"],
@@ -441,6 +508,9 @@ class Workflow:
                   "Feedback will be recorded into each profile after the dinner.")
         g.status = "done"
         self._save(g, audit)
+        if notify and (who := self.sender(g.id)):  # group dinners from POST /gatherings have no sender
+            text = self.receipt(g.id)
+            self._update("outbox.json", [], lambda d: d.append({"sender": who, "text": text}))
         return g
 
     def stop(self, gathering_id: str) -> Gathering:
