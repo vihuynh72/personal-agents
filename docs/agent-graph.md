@@ -142,3 +142,80 @@ Build one class, `tools/real.py: RealTools`, with these methods, in this order o
 Leave `create_checkout`, `verify_checkout` and `place_order` alone; Vi implements those.
 
 How to work independently: `contracts/fixtures.py` has `FakeTools`, which returns fake data in exactly the shapes required. The agent runs on `FakeTools` today. When `RealTools.search_products` returns the same shape, it is swapped in with one line. Done-check: a test in `tools/tests/` that calls `RealTools().search_products("spaghetti", "<address>")` and gets products from two different sources, each with a non-empty ingredient list.
+
+## Backend architecture v2: buying for other people
+
+Status: design, not built. Everything here is additive to the working flow.
+
+There are two graphs. The people graph is data that persists. The order graph is one run of the workflow.
+
+### People graph (who is connected to whom)
+
+- Node: Person. A profile (restrictions, allergens, each marked must-have or flexible), an iMessage contact, a shipping address, and a `verified` flag.
+- Edge: Connection from A to B. It means B has allowed A's agent to act for B, within a scope. It is directed and needs B's consent.
+- Scope on the edge: which of B's facts A's agent may use. Dietary profile, calendar free or busy, and ship-to. A never sees B's address or reasons; the agent uses them without showing them.
+- Creating an edge: A names B. The agent texts B over iMessage: "Vi's agent would like to plan and buy for you. Reply YES to allow." The edge is pending until B replies.
+
+### Order graph (one purchase)
+
+The existing F1 to F13 run, with two roles instead of host and guests:
+
+- Buyer: the person who pays.
+- Recipients: the people whose restrictions apply and where it ships.
+
+| Mode | Buyer and recipients | What is skipped |
+|------|----------------------|-----------------|
+| Self | Buyer is the only recipient | Invitations, calendar |
+| For another person | One recipient who is not the buyer | Calendar |
+| Group dinner | Several recipients | Nothing |
+
+How "buy for someone else" starts:
+
+1. Buyer says "get this week's groceries for my mom".
+2. Router (System 1) resolves "my mom" to a Person through the people graph.
+3. If an accepted Connection with profile and ship-to scope exists, continue with her profile.
+4. If not, the agent texts her for consent and, at most, two questions. The run waits at a human gate. This is a long-running node.
+5. The run continues to product search, alerts, cart and checkout. The cart shows "ships to Mom", not her address.
+
+### Ingredient alerts, not recommendations
+
+The agent does not push products. For every product in a cart it reports one of three states, per recipient:
+
+- Pass: no ingredient conflicts with a declared restriction.
+- Alert: names the ingredient and the person. A must-have alert blocks the item. A flexible one asks.
+- Unknown: the ingredient list is missing or incomplete. Shown as "needs confirmation", never as safe.
+
+Ordering of results is a fixed rule: passing items first, then unit price. No sponsored placement. The rule and its inputs are written to the audit trail. No medical advice: the agent matches named ingredients only and never suggests a product for a condition.
+
+### Feedback loops (edges back into the Person node)
+
+1. Cart edits: a swap or removal is recorded as a preference.
+2. Alert overrides: "I am fine with this" turns a restriction from must-have into flexible for that person.
+3. Review text: after delivery the agent texts "How was it? Anything to avoid next time?" and writes the answer to the profile.
+
+Each loop writes to profile memory (Cognee). The next run reads it at F2, so the agent asks fewer questions each time. Target: two texts for a new person, zero for a known one.
+
+### Identity check (Persona)
+
+- When: once per buyer, before the first checkout that ships to another person, and before any age-restricted item.
+- Where in the graph: a gate between cart approval (F8) and checkout creation (F7).
+- What is stored: the `verified` flag and Persona's inquiry id. No documents.
+- A recipient is not verified; their consent text is the check.
+
+### Contract changes needed (all additive)
+
+- `Person` (GuestProfile plus `phone`, `verified`, `must_have` markers) and `Connection` (`from_id`, `to_id`, `scope`, `status`).
+- `Gathering` gains `buyer_id`, `recipient_ids`, `mode`. `guest_ids` stays as an alias so current callers keep working.
+- `CartItem` gains `status` (pass, alert, unknown) and `alerts[]`.
+- `Tools` gains `send_text`, `verify_identity`; a people store gains `get_connection`, `request_connection`.
+
+### Build nodes
+
+```
+N4 [sonnet] people graph store and endpoints (connect, accept)   -> agent/people.py     check: tests
+N5 [opus]   buyer and recipients, consent gate, alert statuses   -> agent/workflow.py   check: existing 17 tests still pass, new mode tests
+N6 [sonnet] iMessage through Photon behind send_text             -> agent/messenger.py  check: a real text arrives   BLOCKED: Photon secret, phone number
+N7 [sonnet] Persona gate before checkout                         -> agent/identity.py   check: sandbox inquiry      BLOCKED: Persona key
+N8 [sonnet] feedback written to Cognee, read at F2               -> agent/memory.py     check: second run asks nothing
+E: N4 -> N5, N6 -> N5 (fake messenger until then), N7 -> N5, N8 -> N5
+```
