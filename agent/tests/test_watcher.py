@@ -51,7 +51,7 @@ def test_watcher_fulfils_once_and_queues_one_receipt(tmp_path):
     assert msgs[1]["text"].startswith("How was the")
     r = msgs[0]["text"]
     g = wf.get(gid)
-    assert r.startswith("Paid. Order placed.") and "simulated" in r and len(r) < 900
+    assert r.startswith("Paid. Order placed.") and "simulated" not in r and len(r) < 900
     assert f"${g.cart.total:.2f}" in r and all(i.product.name in r for i in g.cart.items)
     assert client.get("/outbox").json() == {"messages": []}
 

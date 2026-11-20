@@ -159,3 +159,17 @@ def test_safety_question_yes_keeps_and_no_removes(tmp_path):
     chat._asked["+15550004444"] = "peanut"
     assert "stop avoiding peanut" in chat.handle("+15550004444", "No!")
     assert calls and calls[0][1] == "chat" and "no longer allergic to peanut" in calls[0][0]
+
+
+def test_followup_waits_until_a_day_after_arrival_by_default(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.delenv("FEEDBACK_DELAY_SECONDS")
+    wf = Workflow(FakeTools(), FakeLLM(), str(tmp_path))
+    g = wf.approve_plan(wf.start("Vi", "get me coffee", "addr", ["g4"]).id)
+    wf.set_sender(g.id, "+15550005555")
+    wf.mark_paid(g.id)
+    texts = [m["text"] for m in wf.outbox_pop()]
+    assert len(texts) == 1 and texts[0].startswith("Paid.")  # the receipt only; no "how was it?" yet
+    arrive = max(i.product.arrive_by for i in g.cart.items)
+    due = wf._update("followups.json", {}, lambda d: d[g.id]["due"])
+    assert due == (datetime(arrive.year, arrive.month, arrive.day, tzinfo=timezone.utc) + timedelta(days=2)).timestamp()

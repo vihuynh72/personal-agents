@@ -5,7 +5,7 @@ import re
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from contracts.models import AuditEvent, Cart, CartItem, Gathering, GuestProfile, Product
@@ -13,8 +13,26 @@ from contracts.tools import Tools
 
 from .cart_page import cart_url
 from .llm import LLM
+from .products import search_for
 from .pricing import quote
 from .profiles import ProfileStore
+
+
+_COOK = re.compile(r"\b(cook|cooking|recipes?|ingredients?|groceries|grocery|make it myself|bake|baking|from scratch|"
+                   r"meal prep|to make)\b", re.I)
+# shortcut: bare "order" is not a signal, so "order oat milk" stays a store purchase
+_ORDER = re.compile(r"\b(order in|ordering in|delivery|deliver|take-?out|catering|what'?s for (?:dinner|lunch|breakfast)|"
+                    r"dinner|lunch|breakfast|brunch|hungry|tacos?|pizzas?|burritos?|sushi|pho|burgers?|"
+                    r"sandwich(?:es)?|platters?)\b", re.I)
+
+
+def route(request: str) -> tuple[str, list[str]]:
+    """Deterministic F1 route for buy-for-myself: cook (groceries), order (prepared food) or shop. Food defaults to order."""
+    if cook := _COOK.findall(request):
+        return "cook", cook
+    if order := _ORDER.findall(request):
+        return "order", order
+    return "shop", []
 
 
 def _json(text: str):
@@ -200,18 +218,17 @@ class Workflow:
 
     def receipt(self, gathering_id: str) -> str:
         g, audit = self._load(gathering_id)
-        orders = [f"{e.inputs['source']} order {e.inputs.get('order_id')}" for e in audit
-                  if e.node_id == "F13" and "source" in e.inputs]
+        # Order numbers only: the text must not claim a retailer received an order (that step is
+        # recorded as simulated in the audit trail and on the order page).
+        orders = [str(e.inputs.get("order_id")) for e in audit if e.node_id == "F13" and "source" in e.inputs]
         arrive = max(i.product.arrive_by for i in g.cart.items)
         q = quote(g.cart)
         items = ["Paid. Order placed."] + [f"- {i.product.name} x{i.quantity}, ${i.product.price * i.quantity:.2f}"
                                            for i in g.cart.items]
         tail = [f"Subtotal ${q['subtotal']:.2f}, shipping ${q['shipping']:.2f} (est.), tax ${q['tax']:.2f} (est.). "
                 f"Charged ${q['total']:.2f}.",
-                f"Retailers: {'; '.join(orders)}.", f"Ships to {g.ship_to}.",
-                f"Estimated arrival {arrive.isoformat()}.", f"Details: {cart_url(g.id)}",
-                "Note: the retailer orders and the virtual card are simulated in this demo; "
-                "the Stripe payment was a test-mode payment."]
+                f"Order numbers: {', '.join(orders)}.", f"Ships to {g.ship_to}.",
+                f"Estimated arrival {arrive.isoformat()}.", f"Details: {cart_url(g.id)}"]
         text = "\n".join(items + tail)
         if len(text) > 900:  # keep the totals and the closing line; trim items
             t = "\n".join(tail)
@@ -275,8 +292,9 @@ class Workflow:
     def audit(self, gathering_id: str) -> list[AuditEvent]:
         return self._load(gathering_id)[1]
 
-    def start(self, host: str, request: str, ship_to: str, guest_ids: list[str], mode: str | None = None) -> Gathering:
-        """mode="self" forces buy-for-myself (chat); None lets F1 decide."""
+    def start(self, host: str, request: str, ship_to: str, guest_ids: list[str], mode: str | None = None,
+              fulfil: str | None = None) -> Gathering:
+        """mode="self" forces buy-for-myself (chat); None lets F1 decide. fulfil forces the self-mode route."""
         g = Gathering(id=uuid.uuid4().hex[:12], host=host, request=request, ship_to=ship_to, guest_ids=guest_ids)
         audit: list[AuditEvent] = []
 
@@ -288,9 +306,14 @@ class Workflow:
             f"Request: {request}", {})
         if mode == "self" or (len(guest_ids) == 1 and intake.get("mode") != "dinner"):
             g.mode = "self"
-        self._log(audit, g, "F1", {"request": request}, [f"host:{host}"],
+        inputs, why = {"request": request}, ""
+        if g.mode == "self":
+            g.fulfil, words = (fulfil, ["forced by the shopper"]) if fulfil else route(request)
+            inputs.update(fulfil=g.fulfil, fulfil_trigger=words)
+            why = f" Route {g.fulfil} ({', '.join(words) or 'no food or cooking words'})."
+        self._log(audit, g, "F1", inputs, [f"host:{host}"],
                   f"Mode {g.mode}. Parsed as {intake.get('kind')} around {intake.get('when')} "
-                  f"for {intake.get('headcount')}.")
+                  f"for {intake.get('headcount')}.{why}")
         self._save(g, audit)
 
         # fanout F2 | F3 | F4, then join; self mode skips F3 and F4
@@ -312,7 +335,12 @@ class Workflow:
         # F5 menu planning (dinner) or shopping list (self)
         facts = [{"name": p.name, "restrictions": p.restrictions, "allergens": p.allergens, "cuisines": p.cuisines}
                  for p in profiles]
-        if g.mode == "self":
+        if g.mode == "self" and g.fulfil == "order":
+            prompt = ("TASK: dishes. The shopper wants to order prepared food in, not cook. Turn this request into 1 to 3 "
+                      "short search terms for prepared dishes on a restaurant menu (e.g. \"tacos\", \"pizza\"), never "
+                      "ingredients. Reply with a JSON array of strings only.\n"
+                      f"Shopper: {json.dumps(facts)}\nRequest: {request}")
+        elif g.mode == "self":
             prompt = ("TASK: shopping. Turn this request into a short shopping list of grocery search terms "
                       "(e.g. \"get me coffee\" -> [\"ground coffee\"]). Use the most common everyday form of a "
                       "product unless the shopper names one. Include only what the person asked for; never add "
@@ -324,7 +352,7 @@ class Workflow:
                       "search term (e.g. \"spaghetti\", \"marinara sauce\"). Reply with a JSON array of strings only.\n"
                       f"Guests: {json.dumps(facts)}")
         out, ok = _ask(self.llm.system2, prompt, [])
-        g.menu = [str(x).strip() for x in out if str(x).strip()][:12] or [request]  # cap: bounds F6 searches
+        g.menu = [str(x).strip() for x in out if str(x).strip()][:3 if g.fulfil == "order" else 12] or [request]  # cap: bounds F6 searches
         g.status = "awaiting_plan_approval"
         self._log(audit, g, "F5", {"guests": facts, "mode": g.mode}, [f"profile:{p.id}" for p in profiles],
                   f"Planned {'shopping list' if g.mode == 'self' else 'menu'}: {', '.join(g.menu)}."
@@ -404,7 +432,7 @@ class Workflow:
 
     def _shop(self, g: Gathering, audit: list[AuditEvent], item: str, profiles: list[GuestProfile]):
         # F6: deterministic check of every ingredient against every guest; the LLM only expands restriction names.
-        found = self.tools.search_products(item, g.ship_to)
+        found = search_for(self.tools, item, g.ship_to, g.fulfil)
         wrong = [p.id for p in found if _wrong_form(item, p)]
         if len(wrong) < len(found):  # drop products that contradict the named form, unless nothing else is left
             found = [p for p in found if p.id not in wrong]
@@ -617,7 +645,14 @@ class Workflow:
         if notify and (who := self.sender(g.id)):  # group dinners from POST /gatherings have no sender
             text = self.receipt(g.id)
             self._update("outbox.json", [], lambda d: d.append({"sender": who, "text": text}))
-        due = datetime.now(timezone.utc).timestamp() + float(os.environ.get("FEEDBACK_DELAY_SECONDS", "0") or 0)
+        # Ask how it was only once the order has had time to arrive and be used: 24 hours after the end of
+        # the estimated arrival day. FEEDBACK_DELAY_SECONDS overrides this (tests, or a recorded demo).
+        override = os.environ.get("FEEDBACK_DELAY_SECONDS", "")
+        if override != "":
+            due = datetime.now(timezone.utc).timestamp() + float(override)
+        else:
+            arrive = max(i.product.arrive_by for i in g.cart.items)
+            due = (datetime(arrive.year, arrive.month, arrive.day, tzinfo=timezone.utc) + timedelta(days=2)).timestamp()
         self._update("followups.json", {}, lambda d: d.setdefault(g.id, {"due": due, "sent": False}))
         self.send_followups()  # after the receipt; with a delay the watcher tick sends it later
         return g

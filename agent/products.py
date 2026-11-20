@@ -161,7 +161,27 @@ def _load(path: Path) -> list[Product] | None:
     return products
 
 
+def is_prepared(p: Product) -> bool:
+    """Prepared food from a delivery or menu source (agent/restaurants.py), not a store product."""
+    from agent.restaurants import SOURCES  # lazy: restaurants imports this module
+    return p.source in SOURCES or p.source == "Sample Menu"
+
+
+def search_for(tools, query: str, ship_to: str, fulfil: str = "shop") -> list[Product]:
+    """Route-aware search: order -> prepared food only (stores skipped); cook -> stores only; shop -> as is."""
+    if fulfil == "order":
+        dishes = getattr(tools, "search_dishes", None)
+        found = dishes(query, ship_to) if dishes else tools.search_products(query, ship_to)
+        return [p for p in found if is_prepared(p)]
+    found = tools.search_products(query, ship_to)
+    return [p for p in found if not is_prepared(p)] if fulfil == "cook" else found
+
+
 class BrightDataTools(StripeTools):
+    def search_dishes(self, query: str, ship_to: str) -> list[Product]:
+        from agent.restaurants import search_dishes  # lazy: restaurants imports this module
+        return search_dishes(query, ship_to)
+
     def place_order(self, cart, source: str) -> str:
         """F13: an agent in a cloud browser checks out on our own demo store (never a real retailer)."""
         if not os.environ.get("CLOUD_ORDERING"):
@@ -177,7 +197,8 @@ class BrightDataTools(StripeTools):
                 "PUBLIC_URL", "https://personal-agents-production-81468651.up.railway.app")
             res = place_order_in_cloud(base, items, "Shopper", cart.ship_to, card["number"], card["exp"], card["cvc"])
             if res.get("ok"):
-                return f"{res['order_id']} (demo store, placed by cloud {res.get('path')})"
+                log.info("cloud ordering placed %s via %s", res["order_id"], res.get("path"))
+                return res["order_id"]
             log.warning("cloud ordering failed: %s", res.get("error"))
         except Exception as e:
             log.warning("cloud ordering failed: %r", e)

@@ -45,6 +45,12 @@ _ANSWER = ("TASK: answer. Rephrase these facts as a reply to the shopper's quest
 
 _AUTOPAY = re.compile(r"\s*(?:(stop) autopay|autopay(?: (on|off)| limit \$?(\d+(?:\.\d+)?))?)[.!\s]*", re.I)
 
+# a route switch for a current food cart: forced, never re-classified
+_TO_COOK = re.compile(r"\s*(?:cook instead|i want to cook|i'?d rather cook)[.!\s]*", re.I)
+_TO_ORDER = re.compile(r"\s*(?:order in instead|just order it)[.!\s]*", re.I)
+_HEAD = {"order": "Ordering in (prepared food):", "cook": "Cooking (groceries):"}
+SWITCH = "Say 'cook instead' or 'order in instead' to switch."
+
 _NONE = re.compile(r"(none|no|nope|nothing|n/?a|no thanks)[.! ]*", re.I)
 
 
@@ -167,6 +173,12 @@ class Chat:
             if profile is None:
                 step = "save your profile and build your cart"
                 return self._onboard(sender, text)
+            current = self._current(sender)
+            to = "cook" if _TO_COOK.fullmatch(text) else "order" if _TO_ORDER.fullmatch(text) else None
+            if to and current and current.fulfil in ("cook", "order"):
+                step = "switch your order"
+                self.wf.stop(current.id)  # reuses the "change" path: stop the old cart, re-run the request
+                return self._order(sender, profile, current.request, fulfil=to)
             step = "understand your message"
             intent = self._intent(text)
             if intent == "update":
@@ -198,10 +210,19 @@ class Chat:
             log.exception("chat step failed: %s", step)
             return f"Sorry, I couldn't {step}. Nothing was bought. Please try again in a moment."
 
-    def _order(self, sender: str, profile: GuestProfile, request: str) -> str:
+    def _order(self, sender: str, profile: GuestProfile, request: str, fulfil: str | None = None) -> str:
         g = self.wf.start(host=profile.name or sender, request=request,
                           ship_to=os.environ.get("DEFAULT_SHIP_TO", "address on file"),  # shortcut: no address field on GuestProfile yet
-                          guest_ids=[sender], mode="self")
+                          guest_ids=[sender], mode="self", fulfil=fulfil)
+        if g.fulfil not in _HEAD:
+            return self._built(sender, g)
+        try:
+            body = self._built(sender, g)
+        except ValueError:  # nothing passed every check: say so on this route instead of a generic apology
+            body = f"I couldn't find anything for \"{g.request}\" that is safe for you, so there's nothing to pay."
+        return f"{_HEAD[g.fulfil]}\n{body}\n{SWITCH}"
+
+    def _built(self, sender: str, g) -> str:
         self.wf.set_sender(g.id, sender)
         g = self.wf.approve_plan(g.id)  # buy-for-myself: the plan gate is skipped by design; payment is the gate
         # autopay: the shopper opted in once, so a saved-card charge under their limit replaces the pay link

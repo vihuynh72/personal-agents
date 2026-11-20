@@ -92,7 +92,7 @@ def test_receipt_has_total_charged_and_no_walmart_link(tmp_path):
     wf.mark_paid(g.id)
     r = wf.receipt(g.id)
     assert "walmart.com" not in r and f"Charged ${quote(g.cart)['total']:.2f}." in r
-    assert f"https://pa.example/cart/{g.id}" in r and len(r) <= 900 and r.splitlines()[-1].startswith("Note:")
+    assert f"https://pa.example/cart/{g.id}" in r and len(r) <= 900 and "simulated" not in r and "demo" not in r.lower() and "Order numbers:" in r
 
 
 def test_chat_reply_links_the_page_not_stripe(tmp_path):

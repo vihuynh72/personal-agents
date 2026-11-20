@@ -95,13 +95,14 @@ def test_request_first_asks_one_question_then_shops(tmp_path):
 
 
 def test_none_means_empty_profile_and_dinner_still_gets_a_cart(tmp_path):
-    c, wf = _chat(tmp_path)
+    from agent.tests.test_routing import DishTools  # N29: a vague meal now orders in prepared food
+    c, wf = _chat(tmp_path, DishTools())
     assert c.handle(ME, "what's for dinner") == ASK_ONE
     reply = c.handle(ME, "none")
     p = ProfileStore(str(tmp_path)).get(ME)
     assert (p.allergens, p.restrictions, p.preferences) == ([], [], [])
     g = wf.get(wf.gatherings_of(ME)[0])
-    assert g.mode == "self" and 2 <= len(g.cart.items) <= 4 and "Here's your cart" in reply
+    assert g.mode == "self" and g.fulfil == "order" and g.cart.items and reply.splitlines()[1].startswith("Ordering in")
 
 
 def test_greeting_paths(tmp_path):

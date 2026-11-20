@@ -73,6 +73,7 @@ class Gathering(BaseModel):
     guest_ids: list[str]
     status: Status = "collecting"
     mode: Literal["dinner", "self"] = "dinner"  # self: the buyer shops for themselves; no invites, no calendar
+    fulfil: Literal["shop", "cook", "order"] = "shop"  # self mode: order = prepared food, cook = groceries
     when: datetime | None = None
     menu: list[str] = []
     cart: Cart | None = None

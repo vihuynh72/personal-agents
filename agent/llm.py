@@ -88,6 +88,8 @@ class FakeLLM:
             req = re.search(r"Request: (.+)", prompt).group(1).lower()
             first = re.search(r"Needs: \[\]", prompt) is not None
             return json.dumps(_STEAKHOUSE if "steakhouse" in req and first else _VARIED)
+        if "TASK: dishes" in prompt:  # the sample menu only has a taqueria
+            return json.dumps(["tacos"])
         if "TASK: shopping" in prompt:
             req = re.search(r"Request: (.+)", prompt).group(1).lower()
             if fix := re.search(r"^(.*?)\.? correction: (.+)$", req):  # chat "change": re-plan the original, then apply it
@@ -95,7 +97,7 @@ class FakeLLM:
                 return json.dumps([f"organic {x}" if "organic" in fix.group(2) else x for x in base])
             if re.search(r"\b(dinner|lunch|meal)\b", req):
                 return json.dumps(["spaghetti", "marinara sauce", "salad"])
-            req = re.sub(r"\b(get me|order|buy|some|please|for myself|for me|i need|i want)\b", " ", req)
+            req = re.sub(r"\b(get me|order|buy|some|please|for myself|for me|i need|i want|to cook|cook|tonight)\b", " ", req)
             items = [x.strip(" .!") for x in re.split(r",| and ", req) if x.strip(" .!")]
             return json.dumps(["ground coffee" if x == "coffee" else x for x in items])
         if "TASK: answer" in prompt:
