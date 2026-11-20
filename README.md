@@ -49,8 +49,8 @@ We also use Claude for careful reasoning, Gemini for fast decisions, Stripe for 
 
 ## Try it
 
-- **Chat in a browser:** https://personal-agents-production-81468651.up.railway.app/try (type your phone number, then ask for something)
 - **The app:** https://personal-agents-production-81468651.up.railway.app/app
+- **The live agent in a browser:** https://personal-agents-production-81468651.up.railway.app/chat (type your phone number, then ask for something)
 - **Test card:** 4242 4242 4242 4242
 
 ## What is real today
@@ -59,6 +59,6 @@ Real: the conversation, the products, the ingredient checks, the Senso checks, t
 
 Simulated: the last step, where an order goes to the retailer. Our agent completes a checkout in a cloud browser on a store that we host. Walmart has an official gateway for approved agents. That is our production path.
 
-The conversation in the app is a guided walkthrough. The conversation by text and at `/try` is the live agent.
+The conversation in the app is a guided walkthrough. The conversation by text and at `/chat` is the live agent.
 
 Setup and more detail: `docs/submission-notes.md`.

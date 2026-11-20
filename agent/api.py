@@ -150,7 +150,12 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
         def _home():
             return _Redirect("/app/")
     @app.get("/try", include_in_schema=False)
-    def _try():  # phone number in, then the real agent over POST /messages
+    def _try():  # the app is the page people should see
+        from fastapi.responses import RedirectResponse as _R
+        return _R("/app/")
+
+    @app.get("/chat", include_in_schema=False)
+    def _chat():  # phone number in, then the real agent over POST /messages
         from fastapi.responses import HTMLResponse
         from agent.try_page import PAGE
         return HTMLResponse(PAGE)
