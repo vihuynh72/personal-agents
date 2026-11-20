@@ -1,0 +1,140 @@
+[
+ {
+  "id": "walmart-5040429010",
+  "name": "Planet Oat Oat Milk, Velvety & Smooth, Barista Lovers, 52 fl oz",
+  "source": "Walmart",
+  "url": "https://www.walmart.com/ip/Planet-Oat-Oat-Milk-Velvety-Smooth-Barista-Lovers-52-fl-oz/5040429010",
+  "price": 3.38,
+  "pack_size": "52 fl oz",
+  "ingredients": [
+   "oatmilk (filtered water, oats)",
+   "sunflower oil",
+   "calcium carbonate",
+   "dipotassium phosphate (stabilizer)",
+   "sea salt",
+   "sunflower lecithin",
+   "natural flavors",
+   "gellan gum",
+   "vitamin a palmitate",
+   "vitamin d2",
+   "riboflavin (vitamin b2) and vitamin b12"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "walmart-157991373",
+  "name": "Planet Oat, Original Oatmilk, Dairy Free, 52 oz, Refrigerated Cardboard Carton",
+  "source": "Walmart",
+  "url": "https://www.walmart.com/ip/Planet-Oat-Original-Oatmilk-Dairy-Free-52-oz-Refrigerated-Cardboard-Carton/157991373",
+  "price": 3.38,
+  "pack_size": "52 oz",
+  "ingredients": [
+   "oatmilk (filtered water, oats)",
+   "calcium carbonate",
+   "dipotassium phosphate (stabilizer)",
+   "sea salt",
+   "gellan gum",
+   "vitamin a palmitate",
+   "vitamin d2",
+   "riboflavin (vitamin b2) and vitamin b12"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "walmart-5493831987",
+  "name": "bettergoods Plant-Based Extra Creamy Oat Milk, 59 fl oz",
+  "source": "Walmart",
+  "url": "https://www.walmart.com/ip/bettergoods-Plant-Based-Extra-Creamy-Oatmilk-59-fl-oz/5493831987",
+  "price": 3.28,
+  "pack_size": "59 fl oz",
+  "ingredients": [
+   "oatmilk (filtered water, oats)",
+   "high oleic sunflower oil",
+   "contians less than 2% of tricalcium phosphate",
+   "dipotassium phosphate",
+   "sea salt",
+   "gellan gum",
+   "vitamin a palmitate",
+   "vitamin d2",
+   "d-alpha tocopherol (vitamin e)",
+   "riboflavin (vitamin b2)",
+   "cyanocobalamin (vitaminb12)"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "walmart-330874349",
+  "name": "Califia Farms Extra Creamy Oat Milk 48 Fluid Ounces",
+  "source": "Walmart",
+  "url": "https://www.walmart.com/ip/Califia-Farms-Dairy-Free-Extra-Creamy-Oat-Milk-48-fl-oz/330874349",
+  "price": 4.32,
+  "pack_size": "",
+  "ingredients": [
+   "oatmilk (water, oats)",
+   "sunflower oil",
+   "dipotassium phosphate",
+   "calcium carbonate",
+   "tricalcium phosphate",
+   "sea salt",
+   "vitamin a palmitate",
+   "vitamin d2"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-82798362",
+  "name": "Oatly Barista Edition Ambient Non-Dairy Shelf Stable Oatmilk - 32 fl oz",
+  "source": "Target",
+  "url": "https://www.target.com/p/oatly-barista-edition-oatmilk-ambient-32oz/-/A-82798362",
+  "price": 4.49,
+  "pack_size": "32 fl oz",
+  "ingredients": [],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-94467386",
+  "name": "Planet Oat Original Oat Milk - 32 fl oz",
+  "source": "Target",
+  "url": "https://www.target.com/p/planet-oat-shelf-stable-original-oat-milk-32-fl-oz/-/A-94467386",
+  "price": 3.29,
+  "pack_size": "32 fl oz",
+  "ingredients": [
+   "oatmilk (water, oats)",
+   "calcium carbonate",
+   "dipotassium phosphate (stabilizer)",
+   "sea salt and gellan gum"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-1011383786",
+  "name": "Oatly Barista Edition Vanilla Oatmilk - Ambient Non-Dairy Milk - 32oz",
+  "source": "Target",
+  "url": "https://www.target.com/p/oatly-barista-edition-vanilla-oatmilk-ambient-non-dairy-milk-32oz/-/A-1011383786",
+  "price": 4.49,
+  "pack_size": "32oz",
+  "ingredients": [
+   "oat base (water, oats)",
+   "low erucic acid rapeseed oil. contains 2% or less of: cane sugar",
+   "dipotassium phosphate",
+   "calcium carbonate",
+   "sea salt",
+   "natural flavors"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-1011383785",
+  "name": "Oatly 4 Ingredient Oatmilk - Ambient Non-Dairy Milk - 32oz",
+  "source": "Target",
+  "url": "https://www.target.com/p/oatly-4-ingredient-oatmilk-ambient-non-dairy-milk-32oz/-/A-1011383785",
+  "price": 4.49,
+  "pack_size": "32oz",
+  "ingredients": [
+   "oat base (water, oats)",
+   "sea salt",
+   "citrus fiber"
+  ],
+  "arrive_by": "2026-11-23"
+ }
+]

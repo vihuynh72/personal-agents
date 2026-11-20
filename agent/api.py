@@ -82,7 +82,10 @@ def __getattr__(name):  # lazy `app` so importing this module (tests) needs neit
             from contracts.fixtures import FakeTools
 
             import os
-            if os.environ.get("STRIPE_SECRET_KEY"):
+            if os.environ.get("STRIPE_SECRET_KEY") and os.environ.get("BRIGHTDATA_API_KEY"):
+                from agent.products import BrightDataTools
+                tools = BrightDataTools()
+            elif os.environ.get("STRIPE_SECRET_KEY"):
                 from agent.payments import StripeTools
                 tools = StripeTools()
             else:

@@ -1,0 +1,94 @@
+[
+ {
+  "id": "walmart-19621572429",
+  "name": "Dunkin Frosted Sugar Cookie Artificially Flavored Ground Coffee, 11 oz Bag",
+  "source": "Walmart",
+  "url": "https://www.walmart.com/ip/Dunkin-Frosted-Sugar-Cookie-Artificially-Flavored-Ground-Coffee-11-oz-Bag/19621572429",
+  "price": 8.97,
+  "pack_size": "11 oz",
+  "ingredients": [
+   "coffee",
+   "natural and artificial flavor"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "walmart-578550306",
+  "name": "Folgers Classic Roast Ground Coffee, Medium Roast, 25.9 oz Canister",
+  "source": "Walmart",
+  "url": "https://www.walmart.com/ip/Folgers-Classic-Roast-Ground-Coffee-Medium-Roast-25-9-oz-Canister/578550306",
+  "price": 12.96,
+  "pack_size": "25.9 oz",
+  "ingredients": [],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "walmart-971362035",
+  "name": "Folgers Classic Roast Ground Coffee, Medium Roast, 40.3 oz Canister",
+  "source": "Walmart",
+  "url": "https://www.walmart.com/ip/Folgers-Classic-Roast-Ground-Coffee-Medium-Roast-40-3-Oz-Canister/971362035",
+  "price": 19.96,
+  "pack_size": "40.3 oz",
+  "ingredients": [],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "walmart-252420504",
+  "name": "Starbucks Holiday Blend, Medium Roast Ground Coffee, Limited Edition, 100% Arabica Coffee  1.063 lb.",
+  "source": "Walmart",
+  "url": "https://www.walmart.com/ip/Starbucks-Holiday-Blend-Medium-Roast-Ground-Coffee-Limited-Edition-Holiday-Coffee-17-oz/252420504",
+  "price": 14.97,
+  "pack_size": "1.063 lb",
+  "ingredients": [
+   "100% arabica coffee"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-26400934",
+  "name": "Starbucks Holiday Blend Medium Roast Ground Coffee - 10oz",
+  "source": "Target",
+  "url": "https://www.target.com/p/starbucks-holiday-blend-medium-roast-ground-coffee-10oz/-/A-26400934",
+  "price": 12.79,
+  "pack_size": "10oz",
+  "ingredients": [
+   "ground arabica coffee"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-50300298",
+  "name": "Peet's Coffee Big Bang Medium Roast Ground Coffee - 10.5oz: Arabica Beans, Citrus & Milk Chocolate",
+  "source": "Target",
+  "url": "https://www.target.com/p/peet-39-s-coffee-big-bang-medium-roast-ground-coffee-10-5oz/-/A-50300298",
+  "price": 9.99,
+  "pack_size": "10.5oz",
+  "ingredients": [],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-14776586",
+  "name": "Classic Roast Medium Roast Ground Coffee - 25.9oz - Market Pantry\u2122",
+  "source": "Target",
+  "url": "https://www.target.com/p/classic-roast-medium-roast-ground-coffee-30-5oz-market-pantry-8482/-/A-14776586",
+  "price": 12.99,
+  "pack_size": "25.9oz",
+  "ingredients": [
+   "coffee"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-78630664",
+  "name": "Naturally Flavored Peppermint Stick Light Roast Ground Coffee - 12oz - Good & Gather\u2122",
+  "source": "Target",
+  "url": "https://www.target.com/p/naturally-flavored-peppermint-stick-light-roast-ground-coffee-12oz-good-38-gather-8482/-/A-78630664",
+  "price": 8.99,
+  "pack_size": "12oz",
+  "ingredients": [
+   "arabica coffee *",
+   "natural flavors"
+  ],
+  "arrive_by": "2026-11-23"
+ }
+]

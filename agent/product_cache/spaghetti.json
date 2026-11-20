@@ -1,0 +1,66 @@
+[
+ {
+  "id": "target-78779052",
+  "name": "Spaghetti - 16oz - Good & Gather\u2122",
+  "source": "Target",
+  "url": "https://www.target.com/p/spaghetti-16oz-good-38-gather-8482/-/A-78779052",
+  "price": 1.39,
+  "pack_size": "16oz",
+  "ingredients": [
+   "semolina (wheat)",
+   "niacin",
+   "ferrous sulfate (iron)",
+   "thiamin mononitrate",
+   "riboflavin",
+   "folic acid"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-13156213",
+  "name": "Barilla Spaghetti Pasta - 16oz",
+  "source": "Target",
+  "url": "https://www.target.com/p/barilla-spaghetti-pasta-16oz/-/A-13156213",
+  "price": 1.89,
+  "pack_size": "16oz",
+  "ingredients": [
+   "semolina (wheat)",
+   "durum wheat flour",
+   "vitamins/minerals: vitamin b3 (niacin)",
+   "iron (ferrous sulfate)",
+   "vitamin b1 (thiamine mononitrate)",
+   "vitamin b2 (riboflavin)",
+   "folic acid"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-54489607",
+  "name": "Rao's Homemade Spaghetti Pasta -\u00a0 16oz",
+  "source": "Target",
+  "url": "https://www.target.com/p/rao-39-s-homemade-pasta-spaghetti-16oz/-/A-54489607",
+  "price": 3.19,
+  "pack_size": "16oz",
+  "ingredients": [
+   "durum wheat semolina"
+  ],
+  "arrive_by": "2026-11-23"
+ },
+ {
+  "id": "target-78779138",
+  "name": "Pot-Size Spaghetti - 16oz - Good & Gather\u2122",
+  "source": "Target",
+  "url": "https://www.target.com/p/pot-size-spaghetti-16oz-good-38-gather-8482/-/A-78779138",
+  "price": 1.39,
+  "pack_size": "16oz",
+  "ingredients": [
+   "semolina (wheat)",
+   "niacin",
+   "ferrous sulfate (iron)",
+   "thiamin mononitrate",
+   "riboflavin",
+   "folic acid"
+  ],
+  "arrive_by": "2026-11-23"
+ }
+]
