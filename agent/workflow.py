@@ -11,7 +11,9 @@ from pathlib import Path
 from contracts.models import AuditEvent, Cart, CartItem, Gathering, GuestProfile, Product
 from contracts.tools import Tools
 
+from .cart_page import cart_url
 from .llm import LLM
+from .pricing import quote
 from .profiles import ProfileStore
 
 
@@ -110,13 +112,6 @@ def _who(p: GuestProfile) -> str:
     return p.name if p.name and p.name != p.id else "you"
 
 
-def walmart_cart_link(items: list[CartItem]) -> str | None:
-    """Walmart's official add-to-cart link for the Walmart items (product ids look like walmart-578550306)."""
-    ids = [f"{i.product.id.split('-', 1)[1]}|{i.quantity}" for i in items
-           if i.product.id.lower().startswith("walmart-") and i.product.id.split("-", 1)[1].isdigit()]
-    return "https://affil.walmart.com/cart/addToCart?items=" + ",".join(ids) if ids else None
-
-
 class Workflow:
     def __init__(self, tools: Tools, llm: LLM, data_dir: str = ".data", senso=None, profiles: ProfileStore | None = None):
         self.tools, self.llm, self.senso = tools, llm, senso  # senso: optional agent.senso.Senso; None leaves the flow unchanged
@@ -208,18 +203,19 @@ class Workflow:
         orders = [f"{e.inputs['source']} order {e.inputs.get('order_id')}" for e in audit
                   if e.node_id == "F13" and "source" in e.inputs]
         arrive = max(i.product.arrive_by for i in g.cart.items)
-        lines = ["Paid. Order placed."]
-        lines += [f"- {i.product.name} x{i.quantity}, ${i.product.price * i.quantity:.2f}" for i in g.cart.items]
-        lines += [f"Retailers: {'; '.join(orders)}.", f"Total ${g.cart.total:.2f}. Ships to {g.ship_to}.",
-                  f"Estimated arrival {arrive.isoformat()}.",
-                  "Note: the retailer orders and the virtual card are simulated in this demo; "
-                  "the Stripe payment was a test-mode payment."]
-        if link := walmart_cart_link(g.cart.items):
-            lines.insert(-1, f"Your Walmart cart, ready to check out: {link}")
-        text = "\n".join(lines)
-        if len(text) > 900:  # keep the closing line; trim items
-            tail = "\n".join(lines[-4:])
-            text = "\n".join(lines[:-4])[:896 - len(tail)] + "...\n" + tail
+        q = quote(g.cart)
+        items = ["Paid. Order placed."] + [f"- {i.product.name} x{i.quantity}, ${i.product.price * i.quantity:.2f}"
+                                           for i in g.cart.items]
+        tail = [f"Subtotal ${q['subtotal']:.2f}, shipping ${q['shipping']:.2f} (est.), tax ${q['tax']:.2f} (est.). "
+                f"Charged ${q['total']:.2f}.",
+                f"Retailers: {'; '.join(orders)}.", f"Ships to {g.ship_to}.",
+                f"Estimated arrival {arrive.isoformat()}.", f"Details: {cart_url(g.id)}",
+                "Note: the retailer orders and the virtual card are simulated in this demo; "
+                "the Stripe payment was a test-mode payment."]
+        text = "\n".join(items + tail)
+        if len(text) > 900:  # keep the totals and the closing line; trim items
+            t = "\n".join(tail)
+            text = "\n".join(items)[:896 - len(t)] + "...\n" + t
         return text
 
     def get(self, gathering_id: str) -> Gathering:
@@ -489,7 +485,8 @@ class Workflow:
         g.checkout_url = self.tools.create_checkout(g.cart)
         self._log(audit, g, "F7", {"items": [(i.product.id, i.quantity) for i in g.cart.items]},
                   [f"product:{i.product.id}@{i.product.source}" for i in g.cart.items],
-                  f"{what}: {len(g.cart.items)} items, total ${g.cart.total}, checkout {g.checkout_url}.")
+                  f"{what}: {len(g.cart.items)} items, total ${quote(g.cart)['total']:.2f} with estimated shipping and tax, "
+                  f"checkout {g.checkout_url}.")
 
     def update_cart(self, gathering_id: str, changes: list[dict]) -> Gathering:
         g, audit = self._open(gathering_id, "awaiting_payment")
@@ -528,9 +525,12 @@ class Workflow:
             g.status = "fulfilling"
             self._save(g, audit)
 
+        if addr := getattr(self.tools, "shipping_address", lambda c: None)(g.cart):  # the address Stripe collected
+            g.ship_to = g.cart.ship_to = addr
+            self._save(g, audit)
         # F13 virtual card: shortcut: mocked, Stripe Issuing is not enabled on this account
         last4 = f"{int(g.id, 16) % 10000:04d}"
-        total = g.cart.total
+        total = quote(g.cart)["total"]
         self._log(audit, g, "F13.card", {"card_last4": last4, "spending_limit": total, "single_use": True},
                   [f"cart_total:{total}"],
                   f"Created a single-use virtual card ending {last4} limited to ${total:.2f} "

@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
+from agent import cart_page
+from agent.pricing import quote
 from agent.profiles import _SAFE
 from contracts.models import GuestProfile
 
@@ -34,6 +36,7 @@ def _out(g) -> dict:
     d = g.model_dump(mode="json")
     if g.cart is not None:
         d["cart"]["total"] = g.cart.total  # Cart.total is a property, so model_dump omits it
+        d["quote"] = quote(g.cart)  # subtotal, shipping, tax, total: what the page shows and Stripe charges
     return d
 
 
@@ -91,6 +94,14 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
     @app.get("/gatherings/{gid}/audit")
     def audit(gid: str):
         return [e.model_dump(mode="json") for e in workflow.audit(gid)]
+
+    @app.get("/cart/{gid}", response_class=HTMLResponse)  # the order page the agent texts
+    def cart_view(gid: str):
+        try:
+            g, audit = workflow.get(gid), workflow.audit(gid)
+        except KeyError:
+            return HTMLResponse(cart_page.not_found(), status_code=404)
+        return HTMLResponse(cart_page.render(g, audit))
 
     @app.post("/messages")  # iMessage bot contract: {"sender", "text"} -> {"reply"}
     def message(b: MessageBody):

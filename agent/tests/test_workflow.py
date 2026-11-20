@@ -282,24 +282,3 @@ def test_senso_downgrade_rewrites_reason(tmp_path, senso):
     item = wf.approve_plan(wf.start("Vi", "get me coffee", "1 Main St", ["g3"]).id).cart.items[0]
     assert item.status == "unknown" and item.reason.startswith("Needs confirmation:")
     assert "No peanut" not in item.reason and "Senso" in item.reason
-
-
-def test_walmart_cart_link_in_receipt(tmp_path):
-    from agent.workflow import walmart_cart_link
-    from contracts.models import CartItem
-
-    class Catalog(FakeTools):
-        def search_products(self, query, ship_to):
-            return [_prod("walmart-578550306", "Ground Coffee", 7.0, "12 oz", source="Walmart")]
-
-    wf = Workflow(Catalog(), FakeLLM(), str(tmp_path))
-    g = wf.approve_plan(wf.start("Vi", "get me coffee", "1 Main St", ["g3"]).id)
-    g = wf.update_cart(g.id, [{"product_id": "walmart-578550306", "quantity": 2}])
-    wf.mark_paid(g.id)
-    r = wf.receipt(g.id)
-    assert "Your Walmart cart, ready to check out: https://affil.walmart.com/cart/addToCart?items=578550306|2" in r
-    assert len(r) <= 900 and r.splitlines()[-1].startswith("Note:")
-    other = CartItem(product=_prod("target-1", "X", 1, "1 oz", source="Target"), reason="r")
-    assert walmart_cart_link([other]) is None
-    plain = _wf(tmp_path / "2")
-    assert "Walmart cart" not in plain.receipt(plain.mark_paid(_to_payment(plain).id).id)

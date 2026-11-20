@@ -9,6 +9,23 @@ import stripe
 from contracts.fixtures import FakeTools
 from contracts.models import Cart
 
+from .pricing import quote
+
+
+def _line(name: str, cents: int, quantity: int = 1, description: str | None = None) -> dict:
+    data = {"name": name, **({"description": description[:500]} if description else {})}
+    return {"quantity": quantity, "price_data": {"currency": "usd", "unit_amount": cents, "product_data": data}}
+
+
+def line_items(cart: Cart) -> list[dict]:
+    """Pure: one line per product plus estimated shipping and tax, summing to quote(cart)["total"]."""
+    q = quote(cart)
+    out = [_line(f"{i.product.name} ({i.product.pack_size})", round(i.product.price * 100), i.quantity,
+                 f"{i.product.source}. Arrives by {i.product.arrive_by}. {i.reason}") for i in cart.items]
+    out += [_line(n, round(q[k] * 100)) for n, k in (("Shipping (estimated)", "shipping"), ("Estimated tax", "tax"))
+            if q[k] > 0]
+    return out
+
 
 class SessionStore:
     """gathering id -> Stripe Checkout Session id, on disk so a restart can still verify and poll."""
@@ -43,24 +60,15 @@ class StripeTools(FakeTools):
         self._sessions = SessionStore(data_dir)
 
     def create_checkout(self, cart: Cart) -> str:
-        web = os.environ.get("WEB_URL", "http://localhost:3000")
+        from agent.cart_page import cart_url
+        url = cart_url(cart.gathering_id)
         session = stripe.checkout.Session.create(
             mode="payment",
-            line_items=[{
-                "quantity": i.quantity,
-                "price_data": {
-                    "currency": "usd",
-                    "unit_amount": round(i.product.price * 100),
-                    "product_data": {
-                        "name": f"{i.product.name} ({i.product.pack_size})",
-                        "description": f"{i.product.source}. Arrives by {i.product.arrive_by}. {i.reason}"[:500],
-                    },
-                },
-            } for i in cart.items],
+            line_items=line_items(cart),
             shipping_address_collection={"allowed_countries": ["US"]},
             metadata={"gathering_id": cart.gathering_id},
-            success_url=f"{web}/gatherings/{cart.gathering_id}?paid=1",
-            cancel_url=f"{web}/gatherings/{cart.gathering_id}",
+            success_url=url + "?paid=1",
+            cancel_url=url,
         )
         self._sessions[cart.gathering_id] = session.id
         return session.url
@@ -73,6 +81,17 @@ class StripeTools(FakeTools):
         s = self._session(cart)
         return s is not None and s.payment_status == "paid"
 
+    def shipping_address(self, cart: Cart) -> str | None:
+        """The delivery address the shopper gave Stripe Checkout, one line; None if none or on any error."""
+        try:
+            s = self._session(cart)
+            d = getattr(getattr(s, "collected_information", None), "shipping_details", None) or getattr(s, "shipping_details", None)
+            a = d.address
+            parts = [d.name, a.line1, a.line2, a.city, f"{a.state or ''} {a.postal_code or ''}".strip()]
+            return ", ".join(p for p in parts if p) or None
+        except Exception:
+            return None
+
     def verify_checkout(self, cart: Cart) -> bool:
         s = self._session(cart)
-        return s is not None and s.payment_status == "paid" and s.amount_subtotal == round(cart.total * 100)
+        return s is not None and s.payment_status == "paid" and s.amount_total == round(quote(cart)["total"] * 100)

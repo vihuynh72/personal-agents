@@ -32,10 +32,10 @@ def test_onboarding_then_order_to_pay_link(tmp_path, monkeypatch):
     gid = next(f.stem for f in tmp_path.glob("*.json"))
     g = wf.get(gid)
     assert g.status == "awaiting_payment" and g.guest_ids == [ME]
-    assert "$7.99" in reply and "No peanut" in reply and g.checkout_url in reply
+    assert "$7.99" in reply and "No peanut" in reply and f"/cart/{gid}" in reply and g.checkout_url not in reply
     assert not any("peanut" in ing for i in g.cart.items for ing in i.product.ingredients)
-    monkeypatch.setenv("WEB_URL", "https://app.example/")
-    assert f"https://app.example/gatherings/{gid}" in c._cart(g)
+    monkeypatch.setenv("PUBLIC_URL", "https://app.example/")
+    assert f"Review and pay: https://app.example/cart/{gid}" in c._cart(g)
 
 
 def test_update_merges_preferences(tmp_path):
@@ -91,7 +91,7 @@ def test_request_first_asks_one_question_then_shops(tmp_path):
     reply = c.handle(ME, "I'm allergic to peanuts")
     assert "Here's your cart" in reply and "No peanut (you)" in reply and "?" not in reply
     assert ProfileStore(str(tmp_path)).get(ME).allergens == ["peanut"]
-    assert wf.get(wf.gatherings_of(ME)[0]).checkout_url in reply
+    assert f"/cart/{wf.gatherings_of(ME)[0]}" in reply
 
 
 def test_none_means_empty_profile_and_dinner_still_gets_a_cart(tmp_path):
@@ -155,7 +155,7 @@ def test_change_replaces_cart_and_stops_old(tmp_path):
     new = wf.gatherings_of(ME)[-1]
     assert new != old and wf.get(old).status == "stopped" and wf.get(new).status == "awaiting_payment"
     assert "Correction: organic instead" in wf.get(new).request and wf.get(new).menu == ["organic ground coffee"]
-    assert reply.startswith("Here's your cart") and wf.get(new).checkout_url in reply
+    assert reply.startswith("Here's your cart") and f"/cart/{new}" in reply
 
 
 def test_drill_adapter_runs_the_real_conversation(tmp_path, monkeypatch):

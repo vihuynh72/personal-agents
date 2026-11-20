@@ -11,7 +11,9 @@ import re
 
 from contracts.models import GuestProfile
 
+from .cart_page import cart_url
 from .connect import hint
+from .pricing import quote
 from .profiles import ProfileStore
 from .llm import FakeLLM
 from .workflow import Workflow, _ask
@@ -282,8 +284,10 @@ class Chat:
         items = g.cart.items if g.cart else []
         if not items:
             return f"I couldn't find anything for \"{g.request}\" that is safe for you, so there's nothing to pay."
-        lines = [f"- {i.product.name} ({i.product.pack_size or 'size n/a'}), ${i.product.price:.2f} x{i.quantity}: {i.reason}"
+        cut = lambda t, n: t if len(t) <= n else t[:n - 3].rstrip() + "..."
+        lines = [f"- {cut(i.product.name, 45)}, ${i.product.price:.2f} x{i.quantity}: {cut(i.reason, 80)}"
                  + (" NEEDS YOUR CONFIRMATION." if i.status == "unknown" else "") for i in items]
-        web = os.environ.get("WEB_URL")
-        link = f"{web.rstrip('/')}/gatherings/{g.id}" if web else g.checkout_url
-        return "\n".join(["Here's your cart:", *lines, f"Total ${g.cart.total:.2f}. Review and pay: {link}"])
+        q = quote(g.cart)
+        return "\n".join(["Here's your cart:", *lines,
+                          f"Subtotal ${q['subtotal']:.2f}, shipping ${q['shipping']:.2f}, est. tax ${q['tax']:.2f}. "
+                          f"Total ${q['total']:.2f}.", f"Review and pay: {cart_url(g.id)}"])
