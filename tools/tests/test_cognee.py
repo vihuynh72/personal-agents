@@ -24,9 +24,9 @@ class FakeCognee:
         if (method, path) == ("POST", "/datasets/"):
             ds = next((d for d in self.datasets if d["name"] == body["name"]), None)
             if not ds:
-                ds = {"id": "gp", "name": body["name"]}
+                ds = {"id": body["name"], "name": body["name"]}
                 self.datasets.append(ds)
-                self.data["gp"] = []
+                self.data[ds["id"]] = []
             return ds
         if (method, path) == ("POST", "/add_text"):
             for t in body["textData"]:
@@ -76,7 +76,7 @@ def test_reload_replaces_instead_of_duplicating(fake):
     profiles = list(load_profiles().values())
     Cognee().replace_profiles(profiles)
     Cognee().replace_profiles(profiles)
-    assert len(fake.data["gp"]) == len(profiles)
+    assert len(fake.data["guest_profiles"]) == len(profiles)
 
 
 def test_newest_item_wins_for_the_same_id(fake):

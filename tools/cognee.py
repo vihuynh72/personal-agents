@@ -1,7 +1,8 @@
-"""Guest profiles in the team's shared Cognee workspace (dataset `guest_profiles`). Stdlib only.
+"""The team's shared Cognee workspace, over its HTTP API. Stdlib only.
 
-Each profile is one text item: a first line `GUEST_PROFILE {json}` that get_profile reads back exactly, then one
-plain sentence so Cognee's graph (cognify) links the person to their restrictions for agent memory search.
+Datasets owned by tools/: `guest_profiles` (F2) and `guest_availability` (F4, filled by tools/sync_calendars.py).
+Each record is one text item: a first line `<TAG> {json}` that is read back exactly, then one plain sentence so
+Cognee's graph (cognify) can link people to facts for agent memory search.
 """
 import json
 import os
@@ -36,6 +37,12 @@ def from_text(text: str) -> GuestProfile | None:
     return GuestProfile.model_validate_json(first[len(TAG):]) if first.startswith(TAG) else None
 
 
+def tagged(tag: str, text: str) -> dict | None:
+    """The JSON on a `<tag> {json}` first line, or None for any other item."""
+    first = text.lstrip().split("\n", 1)[0]
+    return json.loads(first[len(tag):]) if first.startswith(tag) else None
+
+
 class Cognee:
     def __init__(self):
         self.url = (os.environ.get("COGNEE_URL") or "").rstrip("/")
@@ -47,28 +54,45 @@ class Cognee:
         return _http(method, self.url + "/api/v1" + path,
                      {"X-Api-Key": self.key, "Content-Type": "application/json"}, body, timeout)
 
-    def dataset_id(self, create: bool = False) -> str | None:
+    # ---- any dataset by name ----
+
+    def dataset_id(self, create: bool = False, name: str = DATASET) -> str | None:
         if create:  # idempotent: returns the existing dataset when the name is taken
-            return self._call("POST", "/datasets/", {"name": DATASET})["id"]
-        return next((d["id"] for d in self._call("GET", "/datasets/") if d["name"] == DATASET), None)
+            return self._call("POST", "/datasets/", {"name": name})["id"]
+        return next((d["id"] for d in self._call("GET", "/datasets/") if d["name"] == name), None)
+
+    def items(self, name: str) -> list[tuple[str, str]]:
+        """(data_id, text) for every item in the dataset, oldest first."""
+        ds = self.dataset_id(name=name)
+        if ds is None:
+            return []
+        rows = sorted(self._call("GET", f"/datasets/{ds}/data?limit=500"), key=lambda d: d.get("createdAt") or "")
+        return [(r["id"], self._call("GET", f"/datasets/{ds}/data/{r['id']}/raw")) for r in rows]
+
+    def add(self, name: str, texts: list[str], cognify: bool = True) -> str:
+        ds = self.dataset_id(create=True, name=name)
+        self._call("POST", "/add_text", {"textData": texts, "datasetId": ds}, timeout=120)
+        if cognify:
+            self._call("POST", "/cognify", {"datasetIds": [ds], "runInBackground": True}, timeout=60)
+        return ds
+
+    def delete(self, name: str, data_ids: list[str]) -> None:
+        ds = self.dataset_id(name=name)
+        for d in data_ids if ds else []:
+            self._call("DELETE", f"/datasets/{ds}/data/{d}")
+
+    # ---- guest profiles ----
 
     def profiles(self) -> dict[str, GuestProfile]:
         """Every profile in the dataset. If an id appears twice, the newest item wins."""
-        ds = self.dataset_id()
-        if ds is None:
-            return {}
-        items = sorted(self._call("GET", f"/datasets/{ds}/data?limit=500"), key=lambda d: d.get("createdAt") or "")
         out = {}
-        for it in items:
-            if p := from_text(self._call("GET", f"/datasets/{ds}/data/{it['id']}/raw")):
+        for _, text in self.items(DATASET):
+            if p := from_text(text):
                 out[p.id] = p
         return out
 
     def replace_profiles(self, profiles: list[GuestProfile]) -> str:
         """Empty this one dataset, then add every profile and start cognify. Touches no other dataset."""
-        ds = self.dataset_id(create=True)
-        for it in self._call("GET", f"/datasets/{ds}/data?limit=500"):
-            self._call("DELETE", f"/datasets/{ds}/data/{it['id']}")
-        self._call("POST", "/add_text", {"textData": [to_text(p) for p in profiles], "datasetId": ds}, timeout=120)
-        self._call("POST", "/cognify", {"datasetIds": [ds], "runInBackground": True}, timeout=60)
-        return ds
+        self.dataset_id(create=True)
+        self.delete(DATASET, [d for d, _ in self.items(DATASET)])
+        return self.add(DATASET, [to_text(p) for p in profiles])
