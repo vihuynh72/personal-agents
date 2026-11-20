@@ -167,3 +167,19 @@ def test_drill_adapter_runs_the_real_conversation(tmp_path, monkeypatch):
     assert client.post("/chat", json={"message": "get me coffee", "session": "s1"}).json() == {"reply": ASK_ONE}
     assert client.post("/chat", json={"message": "get me coffee", "session": "s2"}).json() == {"reply": ASK_ONE}
     assert "Here's your cart" in client.post("/chat", json={"message": "none", "session": "s1"}).json()["reply"]
+
+
+def test_intent_falls_back_when_the_model_fails(tmp_path):
+    from agent.chat import Chat
+    from agent.profiles import ProfileStore
+
+    class Broken(FakeLLM):
+        def system1(self, prompt):
+            if "TASK: intent" in prompt:
+                raise RuntimeError("model down")
+            return super().system1(prompt)
+
+    store = ProfileStore(str(tmp_path))
+    chat = Chat(Workflow(FakeTools(), Broken(), str(tmp_path), profiles=store), store, Broken())
+    assert chat._intent("is this ok for my allergy?") == "question"
+    assert "couldn't" not in chat.handle("+15550003333", "get me coffee")

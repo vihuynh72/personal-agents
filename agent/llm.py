@@ -1,5 +1,6 @@
 """Two-speed LLM: system1 (fast, Gemini) for parsing and routing, system2 (deliberate, Claude) for planning."""
 import json
+import logging
 import os
 import re
 from typing import Protocol
@@ -83,7 +84,14 @@ class RealLLM:
         self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-4-neon")
 
     def system1(self, prompt: str) -> str:
-        return self._gemini.models.generate_content(model=self._gemini_model, contents=prompt).text
+        # A failed or empty fast-model call falls back to Claude: a Firedrill run lost three turns to this.
+        try:
+            text = self._gemini.models.generate_content(model=self._gemini_model, contents=prompt).text
+            if text:
+                return text
+        except Exception as e:
+            logging.getLogger(__name__).warning("system1 (Gemini) failed, using system2: %r", e)
+        return self.system2(prompt)
 
     def system2(self, prompt: str) -> str:
         r = self._claude.beta.messages.create(

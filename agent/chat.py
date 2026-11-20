@@ -4,6 +4,7 @@ buy-for-myself flow to a pay link. Questions about the cart are answered from th
 Control flow is deterministic; the model (system1) only extracts profile facts and classifies a message.
 The only human gate is payment: chat fulfils only after Stripe itself reports the session paid.
 """
+import json
 import logging
 import os
 import re
@@ -11,6 +12,7 @@ import re
 from contracts.models import GuestProfile
 
 from .profiles import ProfileStore
+from .llm import FakeLLM
 from .workflow import Workflow, _ask
 
 log = logging.getLogger(__name__)
@@ -56,7 +58,16 @@ class Chat:
         self.wf, self.store, self.llm = workflow, profiles, llm
 
     def _intent(self, text: str) -> str | None:
-        return _ask(self.llm.system1, _INTENT + text, {})[0].get("intent")
+        # Classification must never be the reason a shopper gets an apology: on any model failure or an
+        # unexpected label, fall back to the deterministic keyword classifier.
+        try:
+            intent = _ask(self.llm.system1, _INTENT + text, {})[0].get("intent")
+        except Exception:
+            log.exception("intent model failed")
+            intent = None
+        if intent not in ("order", "update", "paid", "question", "change", "other"):
+            intent = json.loads(FakeLLM().system1(_INTENT + text)).get("intent")
+        return intent
 
     def handle(self, sender: str, text: str) -> str:
         step = "read your profile"

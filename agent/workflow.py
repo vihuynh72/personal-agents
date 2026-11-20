@@ -348,7 +348,7 @@ class Workflow:
     def _checks(profiles: list[GuestProfile]) -> str:
         c = ", ".join([f"no {a} ({_who(p)})" for p in profiles for a in p.allergens] +
                       [f"{r} ({_who(p)})" for p in profiles for r in p.restrictions])
-        return c[:1].upper() + c[1:] if c else "No restrictions to check"
+        return (c[:1].upper() + c[1:] + ", per the store's ingredient list") if c else "No restrictions to check"
 
     @staticmethod
     def _unknown_reason(notes: list[str]) -> str:
