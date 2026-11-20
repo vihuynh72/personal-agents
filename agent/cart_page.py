@@ -1,3 +1,4 @@
+import re
 """The order page the agent texts: review items, change quantity or swap, then pay once with Stripe."""
 import os
 from html import escape
@@ -41,7 +42,7 @@ td:last-child{text-align:right;white-space:nowrap}
 tr.total td{border-top:1px solid var(--line);font-weight:700;font-size:1.1rem;padding-top:10px}
 .pay{display:block;text-align:center;background:var(--accent);color:var(--accent-ink);text-decoration:none;font-weight:700;font-size:1.1rem;padding:16px;border-radius:12px;margin:16px 0 8px}
 details summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:center}
-details li{margin:0 0 10px;font-size:.9rem}
+details li{margin:0 0 10px;font-size:.9rem}ul.trail{list-style:none;margin:8px 0 0;padding:0 0 0 14px;border-left:2px solid var(--line,#d9dfd9)}ul.trail li{margin:0 0 14px;overflow-wrap:anywhere}.step{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.step .when{margin-left:auto}.what{margin-top:2px}.chip{font-size:.72rem;padding:1px 7px;border-radius:999px;border:1px solid currentColor;opacity:.75}details.more summary{min-height:32px;font-weight:500;font-size:.82rem}details.more{font-size:.85rem}
 """
 
 _JS = """
@@ -99,6 +100,23 @@ def _item(gid: str, i, editable: bool) -> str:
     return h + "</div>"
 
 
+_STEPS = {"F1": "Understood the request", "F2": "Read the profile", "F3": "Messaged guests", "F4": "Checked calendars",
+          "F5": "Planned what to get", "F6": "Chose a product", "F7": "Built the cart", "F8": "Approval",
+          "F9": "Verified the payment", "F10": "Checked against trusted context", "F11": "Follow-up",
+          "F13": "Placed the order", "F13.card": "Payment card"}
+
+
+def _step(ev) -> str:
+    """One audit event as a short, readable row; the full text stays one tap away."""
+    full = re.sub(r"https?://\S+", "(link)", ev.decision)
+    short = full if len(full) <= 170 else full[:167].rsplit(" ", 1)[0] + "..."
+    chip = "<span class='chip'>simulated</span>" if ev.simulated else ""
+    more = f"<details class='more'><summary>Full detail</summary>{escape(full)}</details>" if short != full else ""
+    return (f"<li><div class='step'><b>{escape(_STEPS.get(ev.node_id, ev.node_id))}</b>{chip}"
+            f"<span class='small when'>{escape(ev.time.strftime('%H:%M UTC'))}</span></div>"
+            f"<div class='what'>{escape(short)}</div>{more}</li>")
+
+
 def render(g, audit) -> str:
     e, gid = escape, g.id  # gid is 12 hex chars (Workflow._path checks), safe inside the JS
     items = g.cart.items if g.cart else []
@@ -127,7 +145,6 @@ def render(g, audit) -> str:
                  + (f". Estimated arrival {arrive.isoformat()}" if arrive else "") + ".</p>"
                  "<p class='small'>Retailer orders and the virtual card are simulated in this demo; "
                  "the Stripe payment was a test-mode payment.</p></div>")
-    body += ("<details class='card'><summary>Why these items? (audit trail)</summary><ol>"
-             + "".join(f"<li><b>{e(ev.node_id)}</b> <span class='small'>{e(ev.time.strftime('%Y-%m-%d %H:%M UTC'))}</span>"
-                       f"<br>{e(ev.decision)}</li>" for ev in audit) + "</ol></details>")
+    body += ("<details class='card'><summary>Why these items? (audit trail)</summary><ul class='trail'>"
+             + "".join(_step(ev) for ev in audit) + "</ul></details>")
     return _page(f"Your order: {g.request[:40]}", body)
