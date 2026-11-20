@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn",
     "anthropic>=2.12.0",
     "google-genai>=3.6.1",
+    "stripe>=17.1.0",
 ]
 
 [dependency-groups]

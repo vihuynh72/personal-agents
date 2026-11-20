@@ -81,6 +81,12 @@ def __getattr__(name):  # lazy `app` so importing this module (tests) needs neit
             from agent.workflow import Workflow
             from contracts.fixtures import FakeTools
 
-            _app = create_app(Workflow(FakeTools(), get_llm()))
+            import os
+            if os.environ.get("STRIPE_SECRET_KEY"):
+                from agent.payments import StripeTools
+                tools = StripeTools()
+            else:
+                tools = FakeTools()
+            _app = create_app(Workflow(tools, get_llm()))
         return _app
     raise AttributeError(name)
