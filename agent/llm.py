@@ -19,6 +19,20 @@ _FORBIDDEN = {
     "halal": ["pork", "bacon", "ham", "gelatin", "wine"],
 }
 
+_VARIED = [  # vegetarian, egg-free and peanut-free
+    {"name": "Vegetable pasta primavera", "ingredients": ["pasta", "zucchini", "tomato", "olive oil", "garlic"], "main": True, "cuisine": "Italian"},
+    {"name": "Black bean tacos", "ingredients": ["black beans", "corn tortilla", "salsa", "avocado"], "main": True, "cuisine": "Mexican"},
+    {"name": "Cucumber salad", "ingredients": ["cucumber", "lettuce", "lemon", "olive oil"], "main": False, "cuisine": "Greek"},
+    {"name": "Garlic bread", "ingredients": ["bread", "garlic", "olive oil"], "main": False, "cuisine": "Italian"},
+    {"name": "Fruit platter", "ingredients": ["strawberries", "mango", "grapes"], "main": False, "cuisine": "none"},
+]
+_STEAKHOUSE = [
+    {"name": "Ribeye steak", "ingredients": ["beef", "butter", "salt"], "main": True, "cuisine": "American"},
+    {"name": "Caesar salad", "ingredients": ["romaine", "egg", "parmesan", "anchovy"], "main": False, "cuisine": "American"},
+    {"name": "Satay skewers", "ingredients": ["chicken", "peanut", "soy sauce"], "main": True, "cuisine": "Thai"},
+    {"name": "Baked potato", "ingredients": ["potato", "butter", "chives"], "main": False, "cuisine": "American"},
+]
+
 
 class FakeLLM:
     """Deterministic stand-in; answers the prompts agent/workflow.py sends, keyed on their task tag."""
@@ -70,6 +84,10 @@ class FakeLLM:
         return json.dumps({"mode": mode, "kind": "home_dinner", "when": "Saturday", "headcount": 6})
 
     def system2(self, prompt: str) -> str:
+        if "TASK: a2a_menu" in prompt:  # agent/a2a.py; "steakhouse" with no counters yet conflicts on purpose
+            req = re.search(r"Request: (.+)", prompt).group(1).lower()
+            first = re.search(r"Needs: \[\]", prompt) is not None
+            return json.dumps(_STEAKHOUSE if "steakhouse" in req and first else _VARIED)
         if "TASK: shopping" in prompt:
             req = re.search(r"Request: (.+)", prompt).group(1).lower()
             if fix := re.search(r"^(.*?)\.? correction: (.+)$", req):  # chat "change": re-plan the original, then apply it

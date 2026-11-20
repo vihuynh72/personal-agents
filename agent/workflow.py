@@ -256,6 +256,10 @@ class Workflow:
                 else:
                     reason = "Your card needs you to approve this one."
         card = f"{c['brand']} ending {c['last4']}"
+        if reason == "Already charged.":
+            # A concurrent caller lost the race. Writing an audit event here would save a stale copy of the
+            # gathering over the winner's fulfilment and leave it stuck at "fulfilling".
+            return {"charged": False, "reason": reason, "card": c}
         self.log_event(gathering_id, "F7", {"autopay": True, "amount": total, "limit": c["limit"], "card": card,
                                             "payment_intent": res and res.get("id"), "error": res and res.get("error")},
                        [f"card:{c['customer']}", f"cart_total:{total}"],

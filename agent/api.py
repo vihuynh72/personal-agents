@@ -135,6 +135,29 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
     def memory_history(pid: str):
         return _memory().history(pid)
 
+    from agent import a2a
+    conns = a2a.Connections(str(profiles.dir.parent))
+
+    def _llm():
+        if getattr(workflow, "llm", None) is None:
+            from agent.llm import get_llm
+            workflow.llm = get_llm()
+        return workflow.llm
+
+    @app.post("/a2a/consent")  # owner lets `to`'s agent ask for owner's data within scopes
+    def a2a_consent(b: dict):
+        return {"scopes": sorted(conns.grant(b["owner"], b["to"], b["scopes"]))}
+
+    @app.post("/a2a/plan")
+    def a2a_plan(b: dict):
+        return a2a.plan_gathering(b["host"], b["guests"], b["request"], b["candidate_times"], profiles, conns,
+                                  getattr(workflow, "tools", None), _llm())
+
+    @app.post("/a2a/message")  # the wire endpoint another deployment's agent calls
+    def a2a_message(b: dict):
+        m = b["message"]
+        return a2a.PersonAgent(m["to"], profiles, conns, getattr(workflow, "tools", None), _llm()).handle(m)
+
     from agent import connect
     _OFF = {"detail": "Google connect is not configured (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET unset)."}
 
