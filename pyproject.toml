@@ -2,7 +2,13 @@
 name = "personal-agents"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2", "fastapi", "uvicorn"]
+dependencies = [
+    "pydantic>=2",
+    "fastapi",
+    "uvicorn",
+    "anthropic>=2.12.0",
+    "google-genai>=3.6.1",
+]
 
 [dependency-groups]
 dev = ["pytest", "httpx"]
