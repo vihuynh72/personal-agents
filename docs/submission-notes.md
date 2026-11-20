@@ -63,3 +63,24 @@ Campaign ids: drill 6 `bef505df-1f17-422c-8641-5e6a7d04cb64`, drill 7 `66929dc6-
 - Use requests whose products are cached and loaded into Senso: "get me coffee", "oat milk", "spaghetti". Other searches take about a minute and come back "needs confirmation" because Senso has no document for them.
 - Stripe test card: 4242 4242 4242 4242, any future date, any CVC.
 - The iMessage line only answers phone numbers added in the Photon dashboard.
+
+## Update, 3:25 PM: what was added after the first version of these notes
+
+| Feature | Status |
+|---------|--------|
+| One question at most, then a cart | Live. A new person gets one question; a known person gets none. |
+| Order page with shipping and tax | Live at `/cart/<id>`. The text links here, not to Stripe. Stripe charges the quoted total. Tax and shipping are labelled estimates. |
+| Day-0 profile from Google | Live. A link in the first text opens Google's consent page (read-only Gmail and Calendar, testing mode, test users only). Only senders, subjects, dates and snippets are read; the token is discarded. The redirect is verified; a full real authorization has not been run. |
+| Memory with conflict handling | Live. Newer statement wins; an allergy is removed only by the person's own word; nothing is deleted. |
+| Feedback after an order | Live. One follow-up text after fulfilment; the reply updates memory. Verified by tests. |
+| Autopay | Live, opt-in. After one payment and a reply of AUTOPAY, orders under a limit are charged to the saved card. Not yet run against real Stripe. |
+| Agent-to-agent planning | Live at `/a2a/plan`. Guest agents share only what to avoid and when they are free, with consent, and negotiate a varied menu. Run once with real models: agreed in one round. |
+| Cloud ordering agent | Live. After payment, an agent in a cloud browser checks out on our own demo store (`/demo-store`) with the order's real products and a simulated card. Verified: order DS-8d41f900 placed in 10.6 seconds through the browser path. It does not order from a real retailer. |
+| Prepared food | A menu parser and a labelled sample menu only. No delivery site gave usable live menus. |
+| Persistent storage | Live. A Railway volume keeps profiles and memory across deploys. |
+
+Real-retailer ordering: Walmart announced an official Agent Gateway (an MCP server for approved agents) in October 2026, reported as invite-only. That is the intended production route. Target has no equivalent that we found.
+
+Firedrill, later runs: drill 8 scored 73.5 of 100 (threshold 75). One turn replied "couldn't save your profile and build your cart"; the cause was not reproduced afterwards (the same messages succeed), and code was being edited on the machine while that drill ran. A ninth drill is recorded in the campaign list if it finished.
+
+Teammates' work on `main`: Ketki's `tools/` (guest profiles in Cognee, calendar availability with Google sign-in and an Airbyte sync), Jing's pitch script. Ryan's UI had not been pushed as of 3:23 PM.
