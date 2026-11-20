@@ -4,7 +4,7 @@ Distilled from the recorded team discussion. Statements are what the team said, 
 
 ## Converged direction: agentic gatherings (group dinner and party agent)
 
-Status: proposed for team agreement at the end of the session.
+Status: adopted. The demo is host mode ending on a Stripe checkout. The function and agent breakdown is in `docs/agent-graph.md`.
 
 Scenario: "We want to have dinner tonight, six people, and everyone's preference is different." Today one organizer has to ask every person for availability and food preference. That takes time.
 
@@ -75,9 +75,16 @@ One teammate argued against shopping entirely: buying is too personal and trends
 
 ## Open questions
 
-1. Does the team commit to agentic gatherings, and which single mode do we demo?
-2. What is the one end-to-end action in the demo: a restaurant reservation, a ticket booking, or a grocery checkout?
+Answered in the follow-up discussion:
+
+- Mode and demo action: host mode, ending on one Stripe checkout that lists all products with ship-to and arrive-by. This keeps us on the "shopping agent with an audit trail" challenge.
+- Architecture: one master agent over sub-agents, a hierarchy.
+- Price comparison stays out: too many store databases.
+
+Still open:
+
+1. Where does product and ingredient data come from?
+2. How do guests get messaged, given WhatsApp login is blocked by the missing cell signal?
 3. How do agents share data without leaking it? What does add-friend mode expose?
 4. Which two or three sponsors fit the story?
 5. Who owns front end, integrations, demo video and submission?
-6. Do we stay close enough to "shopping agent with an audit trail" to be eligible for the Senso prize?
