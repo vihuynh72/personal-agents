@@ -99,12 +99,26 @@ Left out: SingleStore (no real-time data need yet), Amplitude (analytics does no
 
 ## Owners
 
-| Piece | Owner |
-|-------|-------|
-| Agent structure, backend, agentic workflow, initiating the sub-agents | Vi |
-| Front end: app design and pages | The teammate who is strongest at user interface |
-| Sponsor integrations (Senso, Airbyte, Firedrill, Persona) | Unassigned |
-| Demo video and submission | Unassigned |
+The product is a web app, not a native app. Each owner has one folder, and nobody edits another owner's folder.
+
+| Owner | Role | Folder | Functions | Sponsors |
+|-------|------|--------|-----------|----------|
+| Vi | Agent and backend: master agent, sub-agents, graph state, audit trail | `agent/` | F1, F3, F5, F8, F10, F11, F13 | Guild AI, Cognee |
+| Ryan | Front end and UI: host request page, plan approval, editable cart, audit trail view | `web/` | Screens for F8 and F10 | Persona (verification step in the checkout screen) |
+| Ketki | Data and payments: product pulls from two sources, ingredient data into Senso, Stripe checkout and payment event, calendar lookup | `tools/` | F2 data, F4, F6 data, F7, F9 | Senso.ai, Airbyte |
+| Jing | Product manager: MVP scope, demo script, test scenarios, presentation, video and submission | `docs/`, `demo/` | Acceptance of every function | Firedrill (guest test scenarios) |
+
+Vi and Ketki split the agent and backend work. Vi takes the agent half: the workflow design, the agents that need judgment, memory and the audit trail. Ketki takes the backend half: every deterministic tool the agents call, plus payments. The line between them is the function-node versus agent-node column in the functions table. The exact list is a proposal for the two of them to adjust.
+
+### Contracts between owners
+
+These three shapes are the only things owners share. Agree on them first, then build independently against fake data.
+
+- Product (Ketki produces, Vi's shopper agent consumes): `id`, `name`, `source`, `url`, `price`, `pack_size`, `ingredients[]`, `arrive_by`.
+- Cart (Vi produces, Ryan displays, Ketki turns into a Stripe checkout): `gathering_id`, `ship_to`, `items[]` where each item has `product`, `quantity`, `alternatives[]` and `reason` (why it passed every guest's restrictions).
+- Audit event (every node writes, Ryan displays): `node_id`, `time`, `inputs`, `context_used`, `decision`.
+
+Calls: `web/` talks only to `agent/` over HTTP. `agent/` calls `tools/` as functions. `tools/` never calls `agent/`, except the Stripe payment event, which posts to one `agent/` endpoint.
 
 ## Risks seen during the session
 
