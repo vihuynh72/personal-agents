@@ -58,6 +58,10 @@ def elevenlabs():
     call("https://api.elevenlabs.io/v1/voices/" + E("ELEVENLABS_VOICE_ID"), {"xi-api-key": E("ELEVENLABS_API_KEY")})
 
 
+def persona():
+    call("https://api.withpersona.com/api/v1/inquiries?page%5Bsize%5D=1", {"authorization": f"Bearer {E('PERSONA_API_KEY')}"})
+
+
 def railway():
     assert '"ok":true' in call("https://personal-agents-production-81468651.up.railway.app/health").replace(" ", "")
 
@@ -72,7 +76,7 @@ CHECKS = {
     "ElevenLabs voice": (elevenlabs, ["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]),
     "Railway API": (railway, []),
     "Photon iMessage": (None, ["PHOTON_PROJECT_ID", "PHOTON_PROJECT_SECRET"]),
-    "Persona": (None, ["PERSONA_API_KEY"]),
+    "Persona (sandbox)": (persona, ["PERSONA_API_KEY"]),
     "Senso": (senso, ["SENSO_API_KEY"]),
     "Guild AI": (None, ["GUILD_API_KEY"]),
     "Firedrill": (None, ["FIREDRILL_API_KEY"]),
