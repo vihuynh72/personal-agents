@@ -103,12 +103,12 @@ The product is a web app, not a native app. Each owner has one folder, and nobod
 
 | Owner | Role | Folder | Functions | Sponsors |
 |-------|------|--------|-----------|----------|
-| Vi | Agent and backend: master agent, sub-agents, graph state, audit trail | `agent/` | F1, F3, F5, F8, F10, F11, F13 | Guild AI, Cognee, Firedrill (simulated guests to test the agents) |
+| Vi | Agent and backend: master agent, sub-agents, graph state, audit trail, and Stripe (Vi holds the Stripe account) | `agent/` | F1, F3, F5, F7, F8, F9, F10, F11, F13 | Guild AI, Cognee, Firedrill (simulated guests to test the agents) |
 | Ryan | Front end and UI: host request page, plan approval, editable cart, audit trail view | `web/` | Screens for F8 and F10 | Persona (verification step in the checkout screen) |
-| Ketki | Data and payments: product pulls from two sources, ingredient data into Senso, Stripe checkout and payment event, calendar lookup | `tools/` | F2 data, F4, F6 data, F7, F9 | Senso.ai, Airbyte |
+| Ketki | Data: product pulls from two sources, ingredient data into Senso, calendar lookup | `tools/` | F2 data, F4, F6 data | Senso.ai, Airbyte |
 | Jing | Product manager: MVP scope, demo script, test scenarios, presentation, video and submission | `docs/`, `demo/` | Acceptance of every function | None |
 
-Vi and Ketki split the agent and backend work. Vi takes the agent half: the workflow design, the agents that need judgment, memory and the audit trail. Ketki takes the backend half: every deterministic tool the agents call, plus payments. The line between them is the function-node versus agent-node column in the functions table. The exact list is a proposal for the two of them to adjust.
+Vi and Ketki split the agent and backend work. Vi takes the agent half: the workflow design, the agents that need judgment, memory and the audit trail. Ketki takes the data half: the deterministic tools that fetch products, ingredients and calendars. Stripe checkout and the payment event stay with Vi, who holds the Stripe account. The line between them is the function-node versus agent-node column in the functions table. The exact list is a proposal for the two of them to adjust.
 
 ### Contracts between owners
 
