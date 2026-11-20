@@ -127,3 +127,18 @@ Calls: `web/` talks only to `agent/` over HTTP. `agent/` calls `tools/` as funct
 - Card data: the host's card number must never be stored on the cloud machine. Stripe holds the card; the system keeps only the Stripe customer and payment ids, plus shipping address and contact details.
 - F13 real purchases: retailer sites block automated checkout and the team's merchant card would be charged for real orders. For the demo, F13 runs against a simulated retailer connector and is labelled as simulated in the audit trail.
 - Web pulls from retailer sites can be blocked or slow. Cache the pulled products so the demo does not depend on a live scrape.
+
+## Ketki's piece: where the flow is cut
+
+The cut is at the `Tools` interface in `contracts/tools.py`. Everything above it (the agents, the workflow, Stripe) is Vi's. Ketki writes plain Python functions below it: no agent logic, no Stripe, no model calls.
+
+Build one class, `tools/real.py: RealTools`, with these methods, in this order of value:
+
+1. `search_products(query, ship_to) -> list[Product]`: pull the product from two online stores and return each with its full ingredient list, price, pack size and arrive-by date. Bright Data is available for the web pulls. Save every result to a JSON cache so the demo never depends on a live pull.
+2. Load the same products and ingredients into Senso, so the agent's context comes from Senso.
+3. `get_profile(guest_id) -> GuestProfile`: return a guest's restrictions and allergens. A JSON file is enough to start.
+4. `find_common_time(guest_ids, around) -> datetime`: Google Calendar lookup. Last, because a fixed time is fine for the demo.
+
+Leave `create_checkout`, `verify_checkout` and `place_order` alone; Vi implements those.
+
+How to work independently: `contracts/fixtures.py` has `FakeTools`, which returns fake data in exactly the shapes required. The agent runs on `FakeTools` today. When `RealTools.search_products` returns the same shape, it is swapped in with one line. Done-check: a test in `tools/tests/` that calls `RealTools().search_products("spaghetti", "<address>")` and gets products from two different sources, each with a non-empty ingredient list.
