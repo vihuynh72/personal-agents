@@ -126,6 +126,12 @@ class Chat:
                 s += f" needs confirmation: {'; '.join(i.alerts) or 'not every check passed'}."
             if i.status == "pass" and ". " in i.reason:
                 s += " " + i.reason.split(". ", 1)[1]  # the ranking part: preference, unit price, options compared
+            # always answer the price question, whatever the safety status
+            cheaper = sorted((a for a in i.alternatives if a.price < p.price), key=lambda a: a.price)[:1]
+            s += f" On price: ${p.price:.2f} for {p.pack_size or 'this pack'}, compared against {len(i.alternatives)} other option(s)."
+            s += (f" The lowest price to pay is {cheaper[0].name[:50]} at ${cheaper[0].price:.2f} "
+                  f"({cheaper[0].pack_size or 'size n/a'}); I picked this one for the lower cost per unit. "
+                  f"Say 'the cheaper one' to switch." if cheaper else " Nothing I found costs less to buy.")
             parts.append(s)
         facts = " ".join(parts) + (" The store's ingredient list does not cover cross-contamination, \"may contain\" "
                                    "warnings or the factory, so I can't confirm those; please check the package.")

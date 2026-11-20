@@ -463,11 +463,19 @@ class Workflow:
             i.product.name.lower() in f"{c.get('claim_text')} {c.get('source_text')}".lower()
             for c in res.get("claims", []) if c.get("verdict") == verdict)]
         conflicts = hit("conflict")
-        unsupported = [i for i in hit("unsupported") if i not in conflicts]
+        # Only an unsupported INGREDIENT claim makes an item unconfirmed. An unsupported price claim is
+        # logged below but must not flip an item whose ingredient list passed the deterministic check.
+        def ingredient_claim(c) -> bool:
+            return "ingredient" in f"{c.get('claim_text')} {c.get('source_text')}".lower()
+        unsupported = [i for i in items if i not in conflicts and any(
+            c.get("verdict") == "unsupported" and ingredient_claim(c)
+            and i.product.name.lower() in f"{c.get('claim_text')} {c.get('source_text')}".lower()
+            for c in res.get("claims", []))]
         for i in unsupported:
+            ranking = i.reason.split(". ", 1)[1] if i.status == "pass" and ". " in i.reason else ""
             i.status = "unknown"
-            i.alerts = i.alerts + ["Senso could not support a claim about this product"]
-            i.reason = self._unknown_reason(i.alerts)
+            i.alerts = i.alerts + ["Senso could not support an ingredient claim about this product"]
+            i.reason = (self._unknown_reason(i.alerts) + " " + ranking).strip()  # keep price and ranking facts
         g.cart.items = [i for i in items if i not in conflicts]
         tally = ", ".join(f"{n} {v}" for v in ("verified", "conflict", "unsupported", "not_verifiable")
                           if (n := sum(c.get("verdict") == v for c in res.get("claims", []))))

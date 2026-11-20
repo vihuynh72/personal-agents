@@ -11,6 +11,6 @@
   ],
   "conditions": [],
   "events": [],
-  "max_turns": 3,
-  "stop_rules": ["Stop once the agent has shown a cart and answered your question about safety and price, or after 3 turns."]
+  "max_turns": 6,
+  "stop_rules": ["You end the conversation yourself. Once the agent has shown a cart, has answered your question about price and your peanut allergy, and you have decided whether you would pay yet, say thanks and stop. Do not ask any new questions after that. If the agent asks you one onboarding question first, answer it briefly and continue."]
 }

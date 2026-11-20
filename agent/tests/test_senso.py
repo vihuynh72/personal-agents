@@ -74,7 +74,7 @@ def test_conflict_removes_item_before_checkout(tmp_path):
 
 
 def test_unsupported_marks_unknown(tmp_path):
-    s = FakeSenso(claims=[_claim("Marinara Sauce from StoreB costs $2.49.", "unsupported")])
+    s = FakeSenso(claims=[_claim("In our catalog, the ingredients of Marinara Sauce are tomato.", "unsupported")])
     g, audit = _run(tmp_path, s)
     item = next(i for i in g.cart.items if i.product.name == "Marinara Sauce")
     assert item.status == "unknown" and item.alerts
@@ -157,3 +157,9 @@ def test_check_request_finished_and_pending(sent):
     assert out["claims"] == [{"claim_text": "a", "source_text": "a.", "verdict": "conflict", "reasoning": "why", "quote": None, "evidence": None}]
     fake.reply = (202, {"eval_run_id": "r2", "status": "running"})
     assert Senso().check("t", "q") == {"id": "r2", "status": "pending", "accuracy_pct": None, "band": None, "claims": []}
+
+
+def test_unsupported_price_claim_does_not_flip_a_passing_item(tmp_path):
+    s = FakeSenso(claims=[_claim("Our catalog lists Marinara Sauce from StoreB at $2.49.", "unsupported")])
+    g, _ = _run(tmp_path, s)
+    assert next(i for i in g.cart.items if i.product.name == "Marinara Sauce").status == "pass"

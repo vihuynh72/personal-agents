@@ -273,7 +273,7 @@ class FakeSenso:
 
     def check(self, text, question):
         return {"id": "r1", "status": "done",
-                "claims": [{"claim_text": "Ground Coffee Medium Roast is listed", "verdict": self.verdict}]}
+                "claims": [{"claim_text": "The ingredients of Ground Coffee Medium Roast are arabica coffee", "verdict": self.verdict}]}
 
 
 @pytest.mark.parametrize("senso", [FakeSenso([]), FakeSenso([{"chunk_text": "x"}], "unsupported")])
