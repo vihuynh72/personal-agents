@@ -4,12 +4,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from contracts.models import GuestProfile
+
 
 class StartBody(BaseModel):
     host: str
     request: str
     ship_to: str
     guest_ids: list[str]
+
+
+class MessageBody(BaseModel):
+    sender: str
+    text: str
 
 
 class CartBody(BaseModel):
@@ -23,7 +30,10 @@ def _out(g) -> dict:
     return d
 
 
-def create_app(workflow) -> FastAPI:
+def create_app(workflow, chat=None, profiles=None) -> FastAPI:
+    from agent.profiles import ProfileStore
+
+    profiles = profiles or getattr(workflow, "profiles", None) or ProfileStore()
     app = FastAPI(title="Gathering agent")
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -67,6 +77,25 @@ def create_app(workflow) -> FastAPI:
     def audit(gid: str):
         return [e.model_dump(mode="json") for e in workflow.audit(gid)]
 
+    @app.post("/messages")  # iMessage bot contract: {"sender", "text"} -> {"reply"}
+    def message(b: MessageBody):
+        nonlocal chat
+        if chat is None:
+            from agent.chat import Chat
+            from agent.llm import get_llm
+            chat = Chat(workflow, profiles, get_llm())
+        return {"reply": chat.handle(b.sender, b.text)}
+
+    @app.get("/profiles/{pid}")
+    def get_profile(pid: str):
+        if (p := profiles.get(pid)) is None:
+            raise KeyError(pid)
+        return p.model_dump(mode="json")
+
+    @app.put("/profiles/{pid}")
+    def put_profile(pid: str, b: GuestProfile):
+        return profiles.save(b.model_copy(update={"id": pid})).model_dump(mode="json")
+
     return app
 
 
@@ -94,6 +123,10 @@ def __getattr__(name):  # lazy `app` so importing this module (tests) needs neit
             if os.environ.get("SENSO_API_KEY"):
                 from agent.senso import Senso
                 senso = Senso()
-            _app = create_app(Workflow(tools, get_llm(), senso=senso))
+            from agent.chat import Chat
+            from agent.profiles import ProfileStore
+            llm, store = get_llm(), ProfileStore()
+            wf = Workflow(tools, llm, senso=senso, profiles=store)
+            _app = create_app(wf, Chat(wf, store, llm), store)
         return _app
     raise AttributeError(name)

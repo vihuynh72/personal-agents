@@ -23,6 +23,22 @@ class FakeLLM:
     """Deterministic stand-in; answers the prompts agent/workflow.py sends, keyed on their task tag."""
 
     def system1(self, prompt: str) -> str:
+        if "TASK: profile" in prompt or "TASK: intent" in prompt:
+            raw = re.search(r"Message: (.+)", prompt, re.S).group(1).strip()
+            msg = raw.lower()
+            if "TASK: intent" in prompt:
+                intent = ("paid" if re.search(r"\bpaid\b", msg) else
+                          "update" if re.search(r"\b(prefer|actually|instead|allergic|no longer|stop buying)\b", msg) else
+                          "order" if re.search(r"\b(get|buy|order|need|want)\b", msg) else "other")
+                return json.dumps({"intent": intent})
+            name = re.search(r"\b(?:I am|I'm|my name is)\s+([A-Z][a-z]+)", raw)
+            prefs = [w for w in re.findall(r"\b(?:prefer|like|love|buy)\s+([a-z][\w'-]*)", msg) if w not in ("it", "to", "a")]
+            prefs += [f"under ${n}" for n in re.findall(r"\bunder \$?(\d+)", msg)]
+            return json.dumps({
+                "name": name.group(1) if name else None,
+                "allergens": [a for a in ("peanut", "egg", "milk", "soy", "sesame", "shellfish") if re.search(rf"\b{a}s?\b", msg)],
+                "restrictions": [r for r in _FORBIDDEN if re.search(rf"\b{r}\b", msg)],
+                "preferences": prefs})
         m = re.search(r"Request: (.+)", prompt)
         req = m.group(1).lower() if m else ""
         mode = "dinner" if re.search(r"dinner|party|lunch|brunch|night|guests", req) else "self"

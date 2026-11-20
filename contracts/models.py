@@ -22,6 +22,7 @@ class GuestProfile(BaseModel):
     allergens: list[str] = []  # e.g. "egg", "peanut"
     cuisines: list[str] = []
     contact: str | None = None
+    preferences: list[str] = []  # soft style, never safety: "organic", "folgers", "cheapest", "under $10"
 
 
 class Product(BaseModel):

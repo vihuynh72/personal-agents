@@ -10,6 +10,7 @@ from contracts.models import AuditEvent, Cart, CartItem, Gathering, GuestProfile
 from contracts.tools import Tools
 
 from .llm import LLM
+from .profiles import ProfileStore
 
 
 def _json(text: str):
@@ -51,12 +52,58 @@ def _matches(banned: str, ingredient: str) -> bool:
     return bool(re.search(rf"\b{re.escape(stem)}(e?s)?\b", ingredient, re.I))
 
 
+_SIZE = re.compile(r"(\d+(?:\.\d+)?)\s*-?\s*(fl\.?\s*oz|oz|ounces?|lbs?|pounds?|pack|pk|count|ct)\b", re.I)
+_BUDGET = re.compile(r"(?:under|below|less than|max(?:imum)?|up to|budget(?: of)?|<)\s*\$?\s*(\d+(?:\.\d+)?)", re.I)
+
+
+def _size(pack: str) -> tuple[float, str] | None:
+    """'11 oz' -> (11, 'oz'); '1.063 lb' -> (17.0, 'oz'); '12 fl oz' -> (12, 'fl oz'); '6-pack' -> (6, 'count')."""
+    m = _SIZE.search(pack or "")
+    if not m or float(m.group(1)) <= 0:
+        return None
+    q, u = float(m.group(1)), m.group(2).lower()
+    if u.startswith("fl"):
+        return q, "fl oz"
+    if u.startswith(("lb", "pound")):
+        return q * 16, "oz"
+    return (q, "oz") if u.startswith(("oz", "ounce")) else (q, "count")
+
+
+def _style(prefs: list[str]) -> list[str]:
+    """Preferences that match product words; budgets are filters, and "cheapest" switches the others off."""
+    if any(re.search(r"\bcheapest\b", p, re.I) for p in prefs):
+        return []
+    return [p for p in prefs if not _BUDGET.search(p) and re.search(r"\w", p)]
+
+
+def _hits(p: Product, style: list[str]) -> list[str]:
+    hay = " ".join([p.name, *p.ingredients])
+    return [s for s in style if all(re.search(rf"\b{re.escape(w)}\b", hay, re.I) for w in re.findall(r"[\w'&]+", s))]
+
+
+def _rank(products: list[Product], style: list[str], budget: float | None) -> tuple[list[Product], dict]:
+    """Within one safety tier: in budget, then most preference hits, then unit price, then sticker price."""
+    sizes = {p.id: _size(p.pack_size) for p in products}
+    kinds = {s[1] if s else None for s in sizes.values()}
+    per_unit = len(kinds) == 1 and None not in kinds  # unit prices only compare within one unit
+    unit = lambda p: p.price / sizes[p.id][0] if per_unit else p.price
+    over = lambda p: budget is not None and p.price > budget
+    ranked = sorted(products, key=lambda p: (over(p), -len(_hits(p, style)), unit(p), p.price))
+    return ranked, {"per_unit": per_unit, "unit": kinds.pop() if per_unit else None, "price": unit,
+                    "unparsed": [p.id for p in products if sizes[p.id] is None]}
+
+
 class Workflow:
-    def __init__(self, tools: Tools, llm: LLM, data_dir: str = ".data", senso=None):
+    def __init__(self, tools: Tools, llm: LLM, data_dir: str = ".data", senso=None, profiles: ProfileStore | None = None):
         self.tools, self.llm, self.senso = tools, llm, senso  # senso: optional agent.senso.Senso; None leaves the flow unchanged
         self.dir = Path(data_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
+        self.profiles = profiles or ProfileStore(data_dir)
         self._forbidden: dict[str, list[str] | None] = {}  # None: expansion failed, products become unknown
+
+    def _profile(self, person_id: str) -> GuestProfile:
+        """Saved profile first, then the tools (fixtures)."""
+        return self.profiles.get(person_id) or self.tools.get_profile(person_id)
 
     # ---- persistence (F10 storage) ----
 
@@ -118,7 +165,7 @@ class Workflow:
 
         # fanout F2 | F3 | F4, then join; self mode skips F3 and F4
         n = len(guest_ids)
-        calls = [lambda i=i: self.tools.get_profile(i) for i in guest_ids]
+        calls = [lambda i=i: self._profile(i) for i in guest_ids]
         if g.mode == "dinner":
             calls += [lambda i=i: self._text_guest(g, audit, i) for i in guest_ids]
             calls.append(lambda: self.tools.find_common_time(guest_ids, str(intake.get("when", ""))))
@@ -166,7 +213,7 @@ class Workflow:
         self._forbidden = {k: v for k, v in self._forbidden.items() if v is not None}  # retry failed expansions per run
 
         try:
-            profiles = [self.tools.get_profile(i) for i in g.guest_ids]
+            profiles = [self._profile(i) for i in g.guest_ids]
             items = {}  # keyed by product id: two menu items can resolve to the same product
             for m in g.menu:
                 if it := self._shop(g, audit, m, profiles):
@@ -233,15 +280,22 @@ class Workflow:
             else:
                 passing.append(p)
         context = [f"product:{p.id}@{p.source}" for p in found] + [f"profile:{p.id}" for p in profiles]
+        prefs = profiles[0].preferences if profiles else []  # the buyer's (first guest's) style only
+        style = _style(prefs)
+        budget = min((float(m.group(1)) for p in prefs if (m := _BUDGET.search(p))), default=None)
         inputs = {"menu_item": item, "rejected": rejected, "unknown": [p.id for p in unknown],
-                  "rule": "passing first, then unknown; cheapest first within each"}
+                  "rule": "ranked by safety, then stated preferences, then unit price; passing first, then unknown; "
+                          "a budget only drops passing options when one within it remains; no sponsored placement",
+                  "preferences": prefs, "style_used": style, "budget": budget}
         if not passing and not unknown:
             self._log(audit, g, "F6", inputs, context, (f"No product for {item} passed every guest; left it out." if found
                        else f"No product found for {item}; left it out."))
             return None
-        passing.sort(key=lambda p: p.price)
-        unknown.sort(key=lambda p: p.price)
+        passing, basis = _rank(passing, style, budget)
+        unknown, _ = _rank(unknown, style, None)
         ranked = passing + unknown
+        inputs["price_basis"] = (f"unit price per {basis['unit']}" if basis["per_unit"] else
+                                 f"sticker price: pack sizes not comparable (unparsed: {basis['unparsed']})")
         best = ranked[0]
         senso_note, no_context = "", False
         if self.senso:
@@ -253,8 +307,17 @@ class Workflow:
                 senso_note = " Senso: no supporting context in Senso." if no_context else " Senso: supporting context found."
         if passing:
             sources = len({p.source for p in passing})
+            hit = _hits(best, style)
+            pref = (f"Matches preference: {', '.join(hit)}." if hit else
+                    f"No preference matched ({', '.join(style)})." if style else
+                    "Preference: cheapest." if any(re.search(r"\bcheapest\b", p, re.I) for p in prefs) else
+                    f"Within budget ${budget:g}." if budget is not None else "No stated preferences.")
+            if budget is not None and best.price > budget:
+                pref += f" Nothing passing was under ${budget:g}."
+            price = (f"${basis['price'](best):.2f}/{basis['unit']}" if basis["per_unit"]
+                     else f"${best.price:.2f} (sticker price, pack sizes not comparable)")
             reason = self._checks(profiles) + \
-                     f". Cheapest of {len(passing)} passing options from {sources} source{'s' * (sources > 1)}."
+                     f". {pref} {price}, best of {len(passing)} passing options from {sources} source{'s' * (sources > 1)}."
             status, alerts = "pass", []
         else:
             reason = self._unknown_reason(notes[best.id]) + " No option passed every check."
@@ -337,7 +400,7 @@ class Workflow:
                     raise ValueError(f"{c['swap_to']} is not an alternative for {item.product.id}")
                 item.alternatives = [a for a in item.alternatives if a.id != alt.id] + [item.product]
                 item.product = alt
-                profiles = profiles or [self.tools.get_profile(i) for i in g.guest_ids]
+                profiles = profiles or [self._profile(i) for i in g.guest_ids]
                 bad, notes = self._check(alt, profiles)
                 if bad:  # alternatives were checked when built; only a changed profile lands here
                     item.status, item.alerts, item.reason = "alert", bad, f"Conflicts: {', '.join(bad)}."

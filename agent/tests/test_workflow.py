@@ -73,8 +73,8 @@ def test_alternatives_quantity_and_swap(tmp_path):
     total = g.cart.total
     g = wf.update_cart(g.id, [{"product_id": "b-salad", "quantity": 3}])
     assert g.cart.total == round(total + 2 * 3.49, 2)
-    g = wf.update_cart(g.id, [{"product_id": "a-soda6", "swap_to": "a-soda32"}])
-    assert _item(g, "Sparkling Water").product.id == "a-soda32"
+    g = wf.update_cart(g.id, [{"product_id": "a-soda32", "swap_to": "a-soda6"}])  # 32-pack wins on unit price
+    assert _item(g, "Sparkling Water").product.id == "a-soda6"
     with pytest.raises(ValueError):
         wf.update_cart(g.id, [{"product_id": "a-pasta", "swap_to": "a-eggpasta"}])
     with pytest.raises(ValueError):
@@ -180,3 +180,54 @@ def test_failed_restriction_expansion_marks_unknown(tmp_path):
     g = wf.approve_plan(wf.start("Vi", "get me coffee", "1 Main St", ["g1"]).id)
     assert g.cart.items[0].status == "unknown"
     assert "could not check vegetarian (Asha)" in g.cart.items[0].alerts
+
+
+def _prod(id, name, price, pack, ingredients=("coffee",), source="StoreA"):
+    from contracts.models import Product
+    return Product(id=id, name=name, source=source, url="u", price=price, pack_size=pack,
+                   ingredients=list(ingredients), arrive_by="2026-11-27")
+
+
+def _shop_one(tmp_path, products, prefs=(), allergens=()):
+    from contracts.models import GuestProfile
+
+    class Catalog(FakeTools):
+        def search_products(self, query, ship_to):
+            return products
+
+    wf = Workflow(Catalog(), FakeLLM(), str(tmp_path))
+    wf.profiles.save(GuestProfile(id="me", name="Sam", allergens=list(allergens), preferences=list(prefs)))
+    g = wf.approve_plan(wf.start("Sam", "get me coffee", "1 Main St", ["me"]).id)
+    return g.cart.items[0], next(e for e in wf.audit(g.id) if e.node_id == "F6")
+
+
+def test_preference_beats_price_but_never_safety(tmp_path):
+    products = [_prod("cheap", "Classic Ground Coffee", 5.00, "12 oz"),
+                _prod("org", "Organic Ground Coffee", 9.00, "12 oz", source="StoreB"),
+                _prod("org-peanut", "Organic Hazelnut Coffee", 4.00, "12 oz", ["coffee", "peanut"])]
+    item, f6 = _shop_one(tmp_path, products, ["organic"], ["peanut"])
+    assert item.product.id == "org" and item.status == "pass"
+    assert "Matches preference: organic." in item.reason and "$0.75/oz" in item.reason
+    assert "org-peanut" in f6.inputs["rejected"] and "stated preferences, then unit price" in f6.inputs["rule"]
+    item, _ = _shop_one(tmp_path / "2", products, ["organic", "under $6"], ["peanut"])
+    assert item.product.id == "cheap"  # budget filters while one passing option remains
+
+
+def test_unit_price_beats_sticker_price(tmp_path):
+    item, f6 = _shop_one(tmp_path, [_prod("small", "Dunkin Ground Coffee", 8.97, "11 oz"),
+                                    _prod("big", "Folgers Classic Roast", 12.96, "25.9 oz")])
+    assert item.product.id == "big" and "$0.50/oz" in item.reason and "No stated preferences." in item.reason
+    assert f6.inputs["price_basis"] == "unit price per oz"
+
+
+def test_unparsable_pack_size_falls_back_to_sticker(tmp_path):
+    item, f6 = _shop_one(tmp_path, [_prod("big", "Folgers Classic Roast", 12.96, "25.9 oz"),
+                                    _prod("bag", "Store Coffee", 6.00, "")])
+    assert item.product.id == "bag" and "sticker price" in item.reason
+    assert f6.inputs["price_basis"].startswith("sticker price") and "bag" in f6.inputs["price_basis"]
+
+
+def test_pack_size_parsing():
+    from agent.workflow import _size
+    assert _size("1.063 lb") == (1.063 * 16, "oz") and _size("12 fl oz") == (12, "fl oz")
+    assert _size("6-pack") == (6, "count") and _size("25.9oz") == (25.9, "oz") and _size("1 bag") is None
