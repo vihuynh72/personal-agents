@@ -83,8 +83,9 @@ Answered in the follow-up discussion:
 
 Still open:
 
-1. Where does product and ingredient data come from?
-2. How do guests get messaged, given WhatsApp login is blocked by the missing cell signal?
-3. How do agents share data without leaking it? What does add-friend mode expose?
-4. Which two or three sponsors fit the story?
-5. Who owns front end, integrations, demo video and submission?
+1. How do agents share data without leaking it? What does add-friend mode expose?
+2. Final sponsor list: see the recommendation in `docs/agent-graph.md`.
+3. Who owns front end, integrations, demo video and submission?
+4. Does fulfilment place real retailer orders in the demo, or a simulated one?
+
+Answered later, recorded in `docs/agent-graph.md`: product data is pulled from at least two web sources and loaded into Senso; texting goes through Photon.

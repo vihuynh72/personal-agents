@@ -9,7 +9,14 @@ Product in one line: a host says "dinner at my place Saturday for six", and the 
 - The demo ends on a Stripe checkout for all the products the agent needs to buy.
 - The checkout page lists every product, the ship-to address and the arrive-by date. The human does one click.
 - This is our answer to the "shopping agent with an audit trail" challenge.
-- Price comparison across stores is out of scope. Reason given: 35 to 40 stores in a one-mile radius, each with its own database.
+- Broad price comparison across every local store is out of scope. Reason given: 35 to 40 stores in a one-mile radius, each with its own database.
+- Bounded price match is in: every product is looked up on at least two online sources (Walmart was named), pulled from the web, and the agent compares price and pack size.
+- Product and ingredient data is loaded into Senso as the trusted context.
+- The final link is editable: the host can change quantity, switch pack size (for example 32-pack to six-pack) or pick a different version of a product before paying.
+- Payment flow: Stripe charges the host's card. After payment succeeds, fulfilment sub-agents place the orders with the retailers through connectors, running on a cloud machine with the team's own established merchant credentials. The host's shipping address and contact details are auto-filled so they receive the receipts.
+- The team does not hold the host's Gmail or retailer logins.
+- Guest and host texting goes through Photon. Telegram is the fallback.
+- Deployment target is Railway.
 - Restaurant reservation is an optional second path, only if time allows.
 
 ## Functions
@@ -21,8 +28,9 @@ Product in one line: a host says "dinner at my place Saturday for six", and the 
 | F3 | Guest communication: send invitations, collect replies and missing profile facts | Agent node | Coordinator agent |
 | F4 | Calendar: find a time when everyone is free | Function node | Scheduler |
 | F5 | Menu planning: choose dishes that satisfy every restriction | Agent node | Planner agent |
-| F6 | Product search: turn the menu into products, check ingredients against restrictions (for example no egg), filter by delivery location | Agent node | Shopper agent |
-| F7 | Cart and checkout: build one Stripe checkout link with products, ship-to and arrive-by | Function node | Checkout |
+| F6 | Product search: turn the menu into products, pull each from at least two web sources, check ingredients against restrictions (for example no egg), compare price and pack size, filter by delivery location | Agent node | Shopper agent |
+| F7 | Cart and checkout: build one editable cart link (quantity, pack size, product swap) that ends in a Stripe checkout with products, ship-to and arrive-by | Function node | Checkout |
+| F13 | Fulfilment: after Stripe confirms payment, place the orders with each retailer through connectors using the team's merchant credentials | Agent node | Fulfilment agent |
 | F8 | Human gates: host approves the plan, then approves the checkout | Human gate | Master agent |
 | F9 | Verification: confirm the checkout session exists and matches the cart | Function node | Checkout |
 | F10 | Audit trail: record each node's inputs, the context it used and its decision | Function node | Every node writes, master agent owns |
@@ -38,6 +46,7 @@ Product in one line: a host says "dinner at my place Saturday for six", and the 
 - Planner agent: reconciles restrictions into a menu.
 - Shopper agent: finds products and checks ingredient lists.
 - Checkout: deterministic Stripe call plus verification. Not an LLM.
+- Fulfilment agent: one sub-agent per retailer, triggered by the Stripe payment event, places the order from the cloud machine.
 
 ## Graph
 
@@ -49,7 +58,8 @@ F1 intake
   -> F8 human gate: host approves plan
   -> F6 product search (loop until every item passes the ingredient check)
   -> F7 cart and checkout link
-  -> F8 human gate: host clicks pay
+  -> F8 human gate: host edits the cart and clicks pay
+  -> F13 fulfilment (fanout: one sub-agent per retailer)
   -> F9 verification
   -> F11 feedback
 F10 audit trail receives an edge from every node.
@@ -72,10 +82,21 @@ Edges that matter:
 | F4 calendar and product data ingestion | Airbyte | Data integration, if a connector saves time |
 | Age check for guests | Persona | Only relevant if alcohol is on the menu |
 
-Recommendation: Senso, Cognee and Guild AI.
+Team position after the follow-up: Airbyte and Guild AI for sure. Senso, Persona, SingleStore, Cognee and Amplitude were all named as wanted. The team believes three sponsor tools is the minimum; the hackathon page does not state this.
+
+Recommendation: four sponsors, in priority order.
+
+1. Senso.ai: trusted product and ingredient context for F6, and the decision trail for F10. This is the challenge's own sponsor.
+2. Airbyte: pulls product data from the two web sources into one place. It fits the "at least two sources" decision.
+3. Guild AI: runs the master agent and sub-agents.
+4. Cognee: profile memory for F2 and F11.
+
+Left out unless time remains: Persona (nothing in a grocery dinner needs identity or age checks unless alcohol is in the cart), SingleStore (no real-time data need yet), Amplitude (analytics does not appear in the demo).
 
 ## Risks seen during the session
 
-- Guest messaging over WhatsApp is blocked: login needs an OTP by SMS and the venue has no cell signal. Fallback is an invite link or email.
+- WhatsApp login was blocked by a missing SMS code. Resolved by choosing Photon for texting.
 - Stripe keys are being created. Use test mode, and keep keys in `.env`, which is gitignored.
-- Product data source for F6 is not chosen yet. This is the largest unknown.
+- Card data: the host's card number must never be stored on the cloud machine. Stripe holds the card; the system keeps only the Stripe customer and payment ids, plus shipping address and contact details.
+- F13 real purchases: retailer sites block automated checkout and the team's merchant card would be charged for real orders. For the demo, F13 runs against a simulated retailer connector and is labelled as simulated in the audit trail.
+- Web pulls from retailer sites can be blocked or slow. Cache the pulled products so the demo does not depend on a live scrape.
