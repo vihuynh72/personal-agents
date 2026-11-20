@@ -5,12 +5,14 @@ person) and by tools/load_cognee.py (labelled simulated records for the syntheti
 For a time window each person is:
   free     a record covers the window and has no busy block overlapping it
   busy     a busy block overlaps the window
-  pending  no record (declined, never connected, never synced) or the record does not cover the window
+  pending  no record (declined, never connected, never synced), the record does not cover the window, or a
+           real calendar has not synced for MAX_AGE (the agent's loop keeps it fresh; a stalled loop must not
+           leave an old "free" standing)
 Pending never means free. Only busy intervals are stored: no event titles or details exist anywhere in this flow.
 """
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from tools.cognee import Cognee, tagged
@@ -19,6 +21,7 @@ DATASET = "guest_availability"
 TAG = "AVAILABILITY "
 AIRBYTE = "airbyte/source-google-calendar"
 SIMULATED = "simulated"
+MAX_AGE = timedelta(minutes=30)  # real calendars only; simulated demo data does not go stale
 
 Status = Literal["free", "busy", "pending"]
 
@@ -43,9 +46,12 @@ def _t(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def decide(rec: dict | None, start: datetime, end: datetime) -> Answer:
+def decide(rec: dict | None, start: datetime, end: datetime, now: datetime | None = None) -> Answer:
     if rec is None:
         return Answer("pending")
+    now = now or datetime.now(timezone.utc)
+    if rec["source"] == AIRBYTE and now - _t(rec["synced_at"]) > MAX_AGE:
+        return Answer("pending", rec["source"], rec["synced_at"])
     w0, w1 = (_t(x) for x in rec["window"])
     if not (w0 <= start and end <= w1):
         return Answer("pending", rec["source"], rec["synced_at"])
@@ -63,14 +69,14 @@ def records(cognee: Cognee | None = None) -> dict[str, tuple[str, dict]]:
 
 
 def availability(person_ids: list[str], start: datetime, end: datetime,
-                 cognee: Cognee | None = None) -> dict[str, Answer]:
+                 cognee: Cognee | None = None, now: datetime | None = None) -> dict[str, Answer]:
     """Free/busy/pending per person for [start, end). Times must carry a timezone."""
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("start and end need a timezone")
     if end <= start:
         raise ValueError("end must be after start")
     recs = records(cognee)
-    return {pid: decide(recs.get(pid, (None, None))[1], start, end) for pid in person_ids}
+    return {pid: decide(recs.get(pid, (None, None))[1], start, end, now) for pid in person_ids}
 
 
 def replace_record(cognee: Cognee, person_id: str, text: str) -> None:
