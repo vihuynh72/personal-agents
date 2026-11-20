@@ -1,0 +1,12 @@
+[project]
+name = "personal-agents"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2", "fastapi", "uvicorn"]
+
+[dependency-groups]
+dev = ["pytest", "httpx"]
+
+[tool.pytest.ini_options]
+testpaths = ["agent/tests", "tools/tests"]
+pythonpath = ["."]

@@ -15,3 +15,7 @@ graphify-out/.graphify_*.json
 graphify-out/.graphify_*.txt
 graphify-out/cache/
 graphify-out/cost.json
+!.env.example
+.venv/
+__pycache__/
+.data/
