@@ -1,0 +1,8 @@
+[
+ {"id": "g1", "name": "Ketki", "restrictions": ["vegan"], "allergens": [], "cuisines": [], "contact": null},
+ {"id": "g2", "name": "Sam", "restrictions": ["no spicy food"], "allergens": [], "cuisines": [], "contact": null},
+ {"id": "g3", "name": "Jamie", "restrictions": ["no mushrooms"], "allergens": [], "cuisines": [], "contact": null},
+ {"id": "g4", "name": "Ryan", "restrictions": [], "allergens": [], "cuisines": [], "contact": null},
+ {"id": "g5", "name": "Marco", "restrictions": [], "allergens": [], "cuisines": [], "contact": null},
+ {"id": "g6", "name": "Lee", "restrictions": [], "allergens": [], "cuisines": [], "contact": null}
+]
