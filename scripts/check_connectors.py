@@ -42,8 +42,9 @@ def cognee():
 
 
 def airbyte():
-    out = call("https://api.airbyte.com/v1/applications/token", body={
-        "client_id": E("AIRBYTE_CLIENT_ID"), "client_secret": E("AIRBYTE_CLIENT_SECRET"), "grant-type": "client_credentials"})
+    # Airbyte Agents (app.airbyte.ai), not Airbyte Cloud: different host and no grant type.
+    out = call("https://api.airbyte.ai/api/v1/account/applications/token", body={
+        "client_id": E("AIRBYTE_CLIENT_ID"), "client_secret": E("AIRBYTE_CLIENT_SECRET")})
     assert "access_token" in out
 
 
