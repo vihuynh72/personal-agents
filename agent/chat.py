@@ -29,7 +29,7 @@ ASK_ONE = ("Got it. One question before I shop: anything you can't have, and any
 _EXTRACT = ("TASK: profile. Extract shopping facts from this message. Reply with JSON only: "
             '{"name": "<first name or null>", "allergens": ["<lowercase singular food, e.g. peanut>"], '
             '"restrictions": ["<diet, e.g. vegetarian, halal>"], '
-            '"preferences": ["<short soft style keyword: organic, a brand name, cheapest, or a budget as under $N>"], '
+            '"preferences": ["<short soft style keyword: organic, a brand name, cheapest, a budget as under $N, or a cuisine or food culture such as vietnamese>"], '
             '"request": "<what they want bought now, in their words, or null>"}. '
             "Allergens and diets are safety facts; preferences are only style. Use [] when none.\nMessage: ")
 

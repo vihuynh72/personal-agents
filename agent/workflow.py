@@ -333,23 +333,27 @@ class Workflow:
                       [f"calendar:{i}" for i in guest_ids], f"Everyone is free at {g.when.isoformat()}.")
 
         # F5 menu planning (dinner) or shopping list (self)
-        facts = [{"name": p.name, "restrictions": p.restrictions, "allergens": p.allergens, "cuisines": p.cuisines}
-                 for p in profiles]
+        facts = [{"name": p.name, "restrictions": p.restrictions, "allergens": p.allergens, "cuisines": p.cuisines,
+                  "preferences": p.preferences} for p in profiles]
+        fit = ("Fit the person: every term must suit their restrictions and allergens (vegetarian -> never a meat "
+               "version, e.g. \"marinara sauce\", not \"meatballs\"), and when they cook or the dish is open, choose "
+               "ingredients and dishes from their cuisines or food culture in cuisines/preferences. If the request is "
+               "for a party or gathering, also add party supplies: \"paper plates\", \"cups\", \"napkins\". ")
         if g.mode == "self" and g.fulfil == "order":
             prompt = ("TASK: dishes. The shopper wants to order prepared food in, not cook. Turn this request into 1 to 3 "
                       "short search terms for prepared dishes on a restaurant menu (e.g. \"tacos\", \"pizza\"), never "
-                      "ingredients. Reply with a JSON array of strings only.\n"
+                      "ingredients. " + fit + "Reply with a JSON array of strings only.\n"
                       f"Shopper: {json.dumps(facts)}\nRequest: {request}")
         elif g.mode == "self":
             prompt = ("TASK: shopping. Turn this request into a short shopping list of grocery search terms "
                       "(e.g. \"get me coffee\" -> [\"ground coffee\"]). Use the most common everyday form of a "
                       "product unless the shopper names one. Include only what the person asked for; never add "
                       "other items. If the request is only a vague meal (e.g. \"what's for dinner\"), propose one "
-                      "simple meal of 2 to 4 grocery items the shopper can eat. Reply with a JSON array of strings only.\n"
+                      "simple meal of 2 to 4 grocery items the shopper can eat. " + fit + "Reply with a JSON array of strings only.\n"
                       f"Shopper: {json.dumps(facts)}\nRequest: {request}")
         else:
             prompt = ("TASK: menu. Plan a home dinner menu that every guest can eat. Each item must be a short grocery "
-                      "search term (e.g. \"spaghetti\", \"marinara sauce\"). Reply with a JSON array of strings only.\n"
+                      "search term (e.g. \"spaghetti\", \"marinara sauce\"). " + fit + "Reply with a JSON array of strings only.\n"
                       f"Guests: {json.dumps(facts)}")
         out, ok = _ask(self.llm.system2, prompt, [])
         g.menu = [str(x).strip() for x in out if str(x).strip()][:3 if g.fulfil == "order" else 12] or [request]  # cap: bounds F6 searches
