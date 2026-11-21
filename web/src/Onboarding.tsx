@@ -33,6 +33,12 @@ export function Login({ onDone }: { onDone: (a: Account) => void }) {
               {busy ? "Signing in…" : "Continue with Google"}
             </button>
             <button className="btn ghost lg block" onClick={() => setMode("email")}>Continue with email</button>
+            <button className="link-btn" onClick={async () => {
+              // no sign-up: a throwaway guest id, calendar step skipped, straight to the food profile
+              const g = await signIn("Guest", `guest-${Math.random().toString(36).slice(2, 8)}@guest.demo`);
+              const next: Account = { ...g, calendar: "skipped" };
+              saveAccount(next); onDone(next);
+            }}>Try it as a guest, no sign-up</button>
           </div>
         ) : (
           <form className="onboard-actions" onSubmit={(e) => { e.preventDefault(); if (name.trim() && email.includes("@")) go(name.trim().split(" ")[0], email.trim()); }}>
