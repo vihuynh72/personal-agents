@@ -46,7 +46,7 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
     from agent.profiles import ProfileStore
 
     profiles = profiles or getattr(workflow, "profiles", None) or ProfileStore()
-    app = FastAPI(title="Gathering agent")
+    app = FastAPI(title="Blackout")
     app.state.memory = memory  # Chat can be handed this; built on first use when not given
 
     def _memory():
