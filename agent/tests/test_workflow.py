@@ -282,3 +282,13 @@ def test_senso_downgrade_rewrites_reason(tmp_path, senso):
     item = wf.approve_plan(wf.start("Vi", "get me coffee", "1 Main St", ["g3"]).id).cart.items[0]
     assert item.status == "unknown" and item.reason.startswith("Needs confirmation:")
     assert "No peanut" not in item.reason and "Senso" in item.reason
+
+
+def test_relevant_keeps_only_the_ingredient_asked_for():
+    from types import SimpleNamespace as P
+    from agent.workflow import _relevant
+    beans, sprouts = P(name="Organic 3 Bean Blend"), P(name="Fresh Mung Bean Sprouts")
+    assert _relevant("bean sprouts", [beans, sprouts], strict=True) == [sprouts]
+    assert _relevant("bean sprouts", [beans], strict=True) == []  # a loose match is left out, not bought
+    veg, beef = P(name="Vegetable Broth 32oz"), P(name="Beef Broth 32oz")
+    assert _relevant("vegetable broth", [beef, veg], strict=True) == [veg]

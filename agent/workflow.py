@@ -130,6 +130,19 @@ def _who(p: GuestProfile) -> str:
     return p.name if p.name and p.name != p.id else "you"
 
 
+def _relevant(item: str, products: list, strict: bool = False) -> list:
+    """Keep only products whose name is the thing asked for. A store search returns loose matches
+    ("bean sprouts" -> a canned bean blend), and the cheapest loose match used to win. The head word (the last
+    one) must be in the name; no match means the item is left out."""
+    words = [re.sub(r"(es|s)$", "", w) for w in re.findall(r"[a-z]+", item.lower()) if len(w) > 2]
+    if not words:
+        return products
+    has = lambda p, w: w in p.name.lower()
+    head = [p for p in products if has(p, words[-1])]
+    # cooking needs the exact ingredient ("vegetable broth", not any broth); plain shopping keeps every form
+    return ([p for p in head if all(has(p, w) for w in words)] or head) if strict else head
+
+
 class Workflow:
     def __init__(self, tools: Tools, llm: LLM, data_dir: str = ".data", senso=None, profiles: ProfileStore | None = None):
         self.tools, self.llm, self.senso = tools, llm, senso  # senso: optional agent.senso.Senso; None leaves the flow unchanged
@@ -349,7 +362,10 @@ class Workflow:
                       "(e.g. \"get me coffee\" -> [\"ground coffee\"]). Use the most common everyday form of a "
                       "product unless the shopper names one. Include only what the person asked for; never add "
                       "other items. If the request is only a vague meal (e.g. \"what's for dinner\"), propose one "
-                      "simple meal of 2 to 4 grocery items the shopper can eat. " + fit + "Reply with a JSON array of strings only.\n"
+                      "simple meal of 2 to 4 grocery items the shopper can eat. If they want to cook a named dish, list that "
+                      "dish's 5 to 8 core ingredients the way a US grocery store names them, most important first "
+                      "(pho -> rice noodles, beef broth, star anise, fresh ginger, yellow onion, bean sprouts, "
+                      "fresh basil, limes). " + fit + "Reply with a JSON array of strings only.\n"
                       f"Shopper: {json.dumps(facts)}\nRequest: {request}")
         else:
             prompt = ("TASK: menu. Plan a home dinner menu that every guest can eat. Each item must be a short grocery "
@@ -444,6 +460,8 @@ class Workflow:
     def _shop(self, g: Gathering, audit: list[AuditEvent], item: str, profiles: list[GuestProfile]):
         # F6: deterministic check of every ingredient against every guest; the LLM only expands restriction names.
         found = search_for(self.tools, item, g.ship_to, g.fulfil)
+        if g.fulfil == "cook":  # shopping keeps loose matches: "Folgers Classic Roast" is coffee without the word
+            found = _relevant(item, found, strict=True)
         wrong = [p.id for p in found if _wrong_form(item, p)]
         if len(wrong) < len(found):  # drop products that contradict the named form, unless nothing else is left
             found = [p for p in found if p.id not in wrong]
