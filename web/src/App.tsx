@@ -509,7 +509,7 @@ export function App({ user, calendar, savedNeeds, returning, onEditFood, onResta
   return (
     <div className="app">
       <header className="bar">
-        <span className="brand">Gathering</span>
+        <span className="brand">Blackout</span>
         <div className="bar-actions">
           <button className="who-chip" onClick={onEditFood} title={`Your food profile. ${calendar ? "Google Calendar connected." : "Calendar not connected."}`}><span className="avatar sm">{HOST[0]}</span><span className="long">Food profile</span></button>
           {canSpeak && (

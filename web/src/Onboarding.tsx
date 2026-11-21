@@ -22,7 +22,7 @@ export function Login({ onDone }: { onDone: (a: Account) => void }) {
     <div className="onboard">
       <div className="onboard-card">
         <div className="onboard-art" aria-hidden="true"><Table seats={seats} size={200} /></div>
-        <span className="brand">Gathering</span>
+        <span className="brand">Blackout</span>
         <h1 className="onboard-h">Dinner with friends, minus the group chat.</h1>
         <p className="muted">Your agent invites people, finds a time, learns what everyone can eat and gets the groceries. You just talk to it.</p>
 

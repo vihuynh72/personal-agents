@@ -1,4 +1,4 @@
-# Agentic Gatherings
+# Blackout
 
 A personal agent that feeds you and your friends. You send one text. It does the rest.
 
