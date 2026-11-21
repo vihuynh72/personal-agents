@@ -3,7 +3,7 @@ import { imessage } from "@spectrum-ts/imessage";
 
 const API_URL = (process.env.API_URL ?? "https://personal-agents-production-81468651.up.railway.app").replace(/\/+$/, "");
 const INTERIM_MS = 3_000;
-const TIMEOUT_MS = 150_000;
+const TIMEOUT_MS = 600_000; // a new cook list can take a few minutes of store lookups
 const SORRY = "Sorry, I hit a problem on my side. Try again in a minute.";
 
 const OUTBOX_POLL_MS = Number(process.env.OUTBOX_POLL_MS) || 3_000;
