@@ -33,7 +33,7 @@ function Root() {
   return (
     <App
       key={run}
-      user={{ name: account.name }}
+      user={{ name: account.name, id: account.id }}
       calendar={account.calendar === "connected"}
       savedNeeds={needsOf(account.profile)}
       returning={returning}

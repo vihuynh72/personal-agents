@@ -83,8 +83,17 @@ export function googleConnectUrl(id: string) {
 
 // ---------- conversation and payment ----------
 // POST /messages {sender, text} -> {reply}   (agent/chat.py)
-export async function sendMessage(_sender: string, _text: string): Promise<string | null> {
-  return null; // the scripted conversation in App.tsx answers for now
+// Returns null without a backend or on any failure, so the caller can fall back.
+export async function sendMessage(sender: string, text: string): Promise<string | null> {
+  if (!API) return null;
+  try {
+    const r = await fetch(`${API}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender, text }),
+    });
+    return r.ok ? ((await r.json()).reply as string) : null;
+  } catch { return null; }
 }
 
 // The backend's order page /cart/{gid} takes the Stripe payment.

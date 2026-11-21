@@ -76,7 +76,7 @@ function timeIn(text: string): Slot | null {
 }
 
 // ---------- app ----------
-type Props = { user: { name: string }; calendar: boolean; savedNeeds: Need[]; returning: boolean; onEditFood: () => void; onRestart: () => void; onSignOut: () => void };
+type Props = { user: { name: string; id?: string }; calendar: boolean; savedNeeds: Need[]; returning: boolean; onEditFood: () => void; onRestart: () => void; onSignOut: () => void };
 
 export function App({ user, calendar, savedNeeds, returning, onEditFood, onRestart, onSignOut }: Props) {
   const HOST = user.name;
@@ -316,11 +316,18 @@ export function App({ user, calendar, savedNeeds, returning, onEditFood, onResta
   }
 
   // ================= free text =================
+  const live = (text: string) => {
+    setTyping(true);
+    api.sendMessage(user.id ?? HOST, text).then((reply) => {
+      setTyping(false);
+      push({ from: "agent", text: reply ?? "I can plan a dinner or a get-together for you: invites, timing, menu and groceries. Want to host something?" });
+    });
+  };
   const respond = (text: string) => {
     const t = text.toLowerCase();
     if (stage === "start") {
       if (/(host|dinner|party|plan|event|gather|lunch|brunch|people over|friends over)/.test(t)) return startHosting(text);
-      return say(600, { from: "agent", text: "I can plan a dinner or a get-together for you: invites, timing, menu and groceries. Want to host something?" });
+      return live(text); // anything that is not hosting goes to the real agent (POST /messages)
     }
     if (stage === "guests") {
       const named = GUESTS.filter((g) => t.includes(g.name.toLowerCase())).map((g) => g.id);
@@ -374,7 +381,6 @@ export function App({ user, calendar, savedNeeds, returning, onEditFood, onResta
     const clean = text.trim();
     if (!clean || stopped) return;
     setDraft("");
-    api.sendMessage(HOST, clean);
     me(clean);
     typed.current = true;
     try { respond(clean); } finally { typed.current = false; }
@@ -536,7 +542,7 @@ export function App({ user, calendar, savedNeeds, returning, onEditFood, onResta
           return (
             <div key={m.id} className="msg agent">
               <span className="avatar mine" aria-hidden="true" />
-              <div><p className="who">Your agent</p><p>{m.text}</p></div>
+              <div><p className="who">Your agent</p><p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.text.split(/(https?:\/\/\S+)/).map((part, i) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener">Open the order page</a> : part)}</p></div>
             </div>
           );
         })}
