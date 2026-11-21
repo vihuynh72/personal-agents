@@ -410,10 +410,11 @@ export function App({ user, calendar, savedNeeds, returning, onEditFood, onResta
   async function pay() {
     setPaying(true);
     note({ node: "F8", who: "You", did: `Tapped Pay with Stripe for ${money(totals.total)}.`, used: "Shopping list" });
-    await api.pay(totals.total);
+    const res = await api.pay(totals.total);
     setPaying(false);
+    if (!res.paid) return say(300, { from: "agent", text: "The payment didn't go through, so nothing was bought. Tap Pay with Stripe to try again." });
     setStage("paid");
-    note({ node: "F7, F9", who: "Checkout", did: "Stripe confirmed the payment. The session matches the list line by line.", used: "Stripe test mode", simulated: true });
+    note({ node: "F7, F9", who: "Checkout", did: "Stripe confirmed the payment.", used: "Stripe test mode" });
     note({ node: "F13", who: "Fulfilment", did: `Placed ${Object.keys(totals.byStore).length} orders, one per store.`, used: "Merchant account", simulated: true });
     say(300, { from: "card", card: "receipt" });
     say(500, { from: "agent", text: `Paid. Everything arrives the day before. Enjoy the dinner!` });
@@ -783,10 +784,10 @@ function ListCard(p: {
 
       {!p.paid && (
         <div className="buy">
-          <button className="btn primary lg block" disabled={p.paying || p.needsLabel || p.stopped || !p.lines.length} onClick={p.onPay}>
+          <button className="btn primary lg block" disabled={p.paying || p.stopped || !p.lines.length} onClick={p.onPay}>
             {p.paying ? "Opening Stripe…" : `Pay with Stripe, ${money(p.totals.total)}`}
           </button>
-          <p className="fine">{p.needsLabel ? "Check the mustard label first, or remove it." : "One payment covers every store. Stripe test mode."}</p>
+          <p className="fine">{p.needsLabel ? "Heads up: check the mustard label for honey, or remove it." : "One payment covers every store. Stripe test mode."}</p>
         </div>
       )}
     </div>

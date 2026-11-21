@@ -97,7 +97,21 @@ export async function sendMessage(sender: string, text: string): Promise<string 
 }
 
 // The backend's order page /cart/{gid} takes the Stripe payment.
-export async function pay(_total: number) {
-  await wait(1200);
-  return { paid: true };
+// Opens a real Stripe Checkout (test mode) in a new tab and resolves once Stripe reports it paid.
+export async function pay(total: number): Promise<{ paid: boolean }> {
+  if (!API) { await wait(1200); return { paid: true }; }
+  const tab = window.open("", "_blank"); // opened inside the click, so the browser does not block it
+  try {
+    const r = await fetch(`${API}/pay`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ total }) });
+    if (!r.ok) throw new Error("pay");
+    const { id, url } = await r.json();
+    if (tab) tab.location.href = url; else window.location.href = url;
+    for (let i = 0; i < 300; i++) { // up to 10 minutes
+      await wait(2000);
+      const s = await fetch(`${API}/pay/${id}`).then((x) => x.json()).catch(() => null);
+      if (s?.paid) return { paid: true };
+      if (tab?.closed && i > 2) { const last = await fetch(`${API}/pay/${id}`).then((x) => x.json()).catch(() => null); return { paid: !!last?.paid }; }
+    }
+  } catch { tab?.close(); }
+  return { paid: false };
 }

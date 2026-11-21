@@ -3,7 +3,7 @@ import logging
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -153,6 +153,39 @@ def create_app(workflow, chat=None, profiles=None, memory=None) -> FastAPI:
     def _try():  # the app is the page people should see
         from fastapi.responses import RedirectResponse as _R
         return _R("/app/")
+
+    # The web app's own Pay button: a real Stripe Checkout session in test mode for the list's total.
+    def _stripe():
+        import os
+        import stripe
+        key = os.environ.get("STRIPE_SECRET_KEY", "")
+        if "_test_" not in key:  # live keys take real money; this project only runs in test mode
+            raise HTTPException(503, "Stripe test key is not configured")
+        stripe.api_key = key
+        return stripe
+
+    @app.post("/pay")
+    def _pay(body: dict, request: Request):
+        cents = round(float(body.get("total", 0)) * 100)
+        if not 50 <= cents <= 200000:
+            raise HTTPException(400, "total must be between $0.50 and $2,000")
+        base = str(request.base_url).rstrip("/").replace("http://", "https://") if "localhost" not in str(request.base_url) else str(request.base_url).rstrip("/")
+        s = _stripe().checkout.Session.create(
+            mode="payment", success_url=base + "/paid", cancel_url=base + "/paid?cancelled=1",
+            line_items=[{"quantity": 1, "price_data": {"currency": "usd", "unit_amount": cents,
+                         "product_data": {"name": str(body.get("label") or "Blackout dinner groceries")[:120]}}}])
+        return {"id": s.id, "url": s.url}
+
+    @app.get("/pay/{sid}")
+    def _pay_status(sid: str):
+        return {"paid": _stripe().checkout.Session.retrieve(sid).payment_status == "paid"}
+
+    @app.get("/paid", include_in_schema=False)
+    def _paid(cancelled: int = 0):
+        from fastapi.responses import HTMLResponse
+        msg = "Payment cancelled. You can close this tab." if cancelled else "Paid. You can close this tab and go back to Blackout."
+        return HTMLResponse(f"<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><title>Blackout</title>"
+                            f"<body style='font:18px system-ui;display:grid;place-items:center;height:90vh;background:#f3eef8;color:#3b1a52'><p>{msg}</p>")
 
     @app.get("/chat", include_in_schema=False)
     def _chat():  # phone number in, then the real agent over POST /messages
