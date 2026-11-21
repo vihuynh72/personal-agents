@@ -356,7 +356,7 @@ class Workflow:
                       "search term (e.g. \"spaghetti\", \"marinara sauce\"). " + fit + "Reply with a JSON array of strings only.\n"
                       f"Guests: {json.dumps(facts)}")
         out, ok = _ask(self.llm.system2, prompt, [])
-        g.menu = [str(x).strip() for x in out if str(x).strip()][:3 if g.fulfil == "order" else 12] or [request]  # cap: bounds F6 searches
+        g.menu = [str(x).strip() for x in out if str(x).strip()][:3 if g.fulfil == "order" else 8] or [request]  # cap: bounds F6 searches
         g.status = "awaiting_plan_approval"
         self._log(audit, g, "F5", {"guests": facts, "mode": g.mode}, [f"profile:{p.id}" for p in profiles],
                   f"Planned {'shopping list' if g.mode == 'self' else 'menu'}: {', '.join(g.menu)}."
@@ -379,6 +379,13 @@ class Workflow:
         try:
             profiles = [self._profile(i) for i in g.guest_ids]
             items = {}  # keyed by product id: two menu items can resolve to the same product
+            # warm the product cache in parallel: one uncached store search takes about a minute, and a cook
+            # list searched one by one outlasts the iMessage bridge's 150 s limit
+            from concurrent.futures import ThreadPoolExecutor
+            def _warm(m):
+                try: search_for(self.tools, m, g.ship_to, g.fulfil)
+                except Exception: pass  # the real search below reports its own failure
+            with ThreadPoolExecutor(8) as ex: list(ex.map(_warm, g.menu))
             for m in g.menu:
                 if it := self._shop(g, audit, m, profiles):
                     items.setdefault(it.product.id, it)
