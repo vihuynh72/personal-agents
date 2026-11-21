@@ -22,7 +22,7 @@ _CSS = """
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 main{max-width:640px;margin:0 auto;padding:20px 16px 48px}
-h1{font-size:1.35rem;margin:0 0 4px}
+h1{font-size:1.6rem;letter-spacing:-.01em;margin:0 0 2px}.note{margin:10px 0 0;font-size:.9rem;color:var(--warn-ink)}.reason{color:var(--muted);font-size:.9rem}.card{box-shadow:0 1px 2px rgba(0,0,0,.04)}
 .status{display:inline-block;margin:6px 0 18px;padding:4px 12px;border-radius:999px;background:var(--ok-bg);color:var(--ok-ink);font-weight:600;font-size:.9rem}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:0 0 12px}
 .name{font-weight:600;margin:0 0 2px}
@@ -35,7 +35,7 @@ a{color:var(--accent)}
 .step{display:flex;align-items:center;gap:6px}
 .step button{width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:1.3rem}
 .step span{min-width:2ch;text-align:center;font-weight:600}
-select{width:100%;min-height:44px;margin-top:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:.95rem;padding:0 8px}
+select{-webkit-appearance:none;appearance:none;width:100%;min-height:44px;margin-top:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:.95rem;padding:0 8px}
 table{width:100%;border-collapse:collapse}
 td{padding:6px 0;vertical-align:top}
 td:last-child{text-align:right;white-space:nowrap}
@@ -75,10 +75,11 @@ def _item(gid: str, i, editable: bool) -> str:
          f" &middot; arrives by {e(p.arrive_by.isoformat())} (est.)</div>"
          f"<div class='small'><a href='{e(p.url)}' target='_blank' rel='noopener noreferrer'>View on {e(p.source)}</a></div>")
     if i.status != "pass":
-        h += "<p><span class='badge'>Needs your confirmation</span></p>"
-        if i.alerts:
-            h += "<ul class='alerts'>" + "".join(f"<li>{e(a)}</li>" for a in i.alerts) + "</ul>"
-    h += f"<p class='reason'><b>Why:</b> {e(i.reason)}</p><div class='row'>"
+        h += ("<p class='note'><span class='badge'>Check the label</span> "
+              + e("; ".join(i.alerts) or "I could not confirm every ingredient") + "</p>")
+    # the alert line above already says it; do not repeat it in the reason
+    why = re.sub(r"^Needs confirmation:.*?Not confirmed safe\.\s*", "", i.reason, flags=re.S)
+    h += f"<p class='reason'>{e(why)}</p><div class='row'>"
     pid = e(p.id)
     if editable:
         h += (f"<div class='step' aria-label='Quantity'>"
@@ -122,7 +123,7 @@ def render(g, audit) -> str:
     items = g.cart.items if g.cart else []
     q = quote(g.cart) if g.cart else None
     editable = g.status == "awaiting_payment"
-    body = (f"<h1>{e(g.request)}</h1><div class='status'>{e(_STATUS.get(g.status, 'Getting your cart ready'))}</div>"
+    body = (f"<h1>Your order</h1><p class='meta'>You asked: \u201c{e(g.request)}\u201d</p><div class='status'>{e(_STATUS.get(g.status, 'Getting your cart ready'))}</div>"
             + "".join(_item(gid, i, editable) for i in items))
     if q:
         body += (f"<div class='card'><table>"
